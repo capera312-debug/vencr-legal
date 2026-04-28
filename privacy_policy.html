@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Política de Privacidad — Vencr</title>
+<style>
+  :root {
+    --bg: #0F0805;
+    --surface: #1A0E08;
+    --accent: #FF6A1A;
+    --text: #F5EFE0;
+    --text-dim: rgba(245, 239, 224, 0.65);
+    --text-faint: rgba(245, 239, 224, 0.4);
+    --border: rgba(255, 255, 255, 0.08);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    line-height: 1.7;
+    -webkit-font-smoothing: antialiased;
+  }
+  body {
+    background:
+      radial-gradient(ellipse 80% 60% at 20% 0%, rgba(255, 106, 26, 0.08), transparent 60%),
+      var(--bg);
+    min-height: 100vh;
+  }
+  .wrap {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 60px 24px 120px;
+  }
+  header {
+    margin-bottom: 48px;
+    padding-bottom: 24px;
+    border-bottom: 1px solid var(--border);
+  }
+  .logo {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 20px;
+  }
+  .logo-box {
+    width: 36px;
+    height: 36px;
+    background: var(--accent);
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 800;
+    color: white;
+  }
+  .logo-text {
+    font-size: 18px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
+  h1 {
+    font-size: 36px;
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    margin-bottom: 8px;
+    line-height: 1.1;
+  }
+  .meta {
+    color: var(--text-faint);
+    font-size: 13px;
+  }
+  h2 {
+    font-size: 22px;
+    font-weight: 700;
+    margin: 40px 0 16px;
+    letter-spacing: -0.02em;
+  }
+  h3 {
+    font-size: 17px;
+    font-weight: 600;
+    margin: 24px 0 10px;
+    color: var(--accent);
+  }
+  p, li {
+    color: var(--text-dim);
+    margin-bottom: 14px;
+    font-size: 15px;
+  }
+  ul, ol {
+    margin: 14px 0 14px 24px;
+  }
+  li { margin-bottom: 8px; }
+  strong {
+    color: var(--text);
+    font-weight: 600;
+  }
+  a {
+    color: var(--accent);
+    text-decoration: none;
+    border-bottom: 1px solid rgba(255, 106, 26, 0.3);
+  }
+  a:hover { border-bottom-color: var(--accent); }
+  .box {
+    padding: 20px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    margin: 24px 0;
+  }
+  .box-tight p { margin-bottom: 0; }
+  footer {
+    margin-top: 80px;
+    padding-top: 32px;
+    border-top: 1px solid var(--border);
+    color: var(--text-faint);
+    font-size: 13px;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="logo">
+      <div class="logo-box">V</div>
+      <div class="logo-text">Vencr</div>
+    </div>
+    <h1>Política de Privacidad</h1>
+    <div class="meta">Última actualización: 20 de abril de 2026</div>
+  </header>
+
+  <div class="box box-tight">
+    <p>En Vencr nos tomamos tu privacidad en serio. Esta política describe qué información recopilamos, cómo la usamos y los derechos que tienes sobre tus datos. Por favor léela con atención.</p>
+  </div>
+
+  <h2>1. Quiénes somos</h2>
+  <p>Vencr es una aplicación móvil que ayuda a las familias a organizar sus documentos personales y recibir alertas antes de que venzan. Está desarrollada y operada por <strong>Vencr</strong> desde Panamá.</p>
+  <p>Si tienes preguntas sobre esta política o sobre tus datos, puedes escribirnos a <a href="mailto:vencrapp@gmail.com">vencrapp@gmail.com</a>.</p>
+
+  <h2>2. Qué información recopilamos</h2>
+
+  <h3>2.1 Información que tú nos das</h3>
+  <ul>
+    <li><strong>Datos de cuenta:</strong> tu nombre y correo electrónico cuando te registras.</li>
+    <li><strong>Contraseña:</strong> nunca la vemos en texto plano — se guarda cifrada en nuestro proveedor de autenticación (Supabase).</li>
+    <li><strong>Documentos:</strong> las imágenes, PDFs, nombres y fechas de vencimiento de los documentos que subas.</li>
+    <li><strong>Contactos de confianza:</strong> si agregas profesionales (corredor de seguros, abogado, etc.), guardamos su nombre, teléfono y categoría <strong>solo en tu dispositivo</strong>. Nunca los subimos a nuestros servidores.</li>
+  </ul>
+
+  <h3>2.2 Información recopilada automáticamente</h3>
+  <ul>
+    <li><strong>Datos técnicos:</strong> modelo del dispositivo, sistema operativo y versión de la app, para resolver errores.</li>
+    <li><strong>Uso de la app:</strong> eventos anónimos (por ejemplo, "abriste el paywall", "agregaste un documento") para entender cómo se usa la app y mejorarla. No asociamos estos eventos con tu identidad.</li>
+    <li><strong>Token de notificaciones:</strong> un identificador único del dispositivo para enviarte alertas push. No contiene información personal.</li>
+  </ul>
+
+  <h3>2.3 Información que NO recopilamos</h3>
+  <ul>
+    <li>No accedemos a tu galería de fotos sin tu permiso explícito.</li>
+    <li>No leemos el contenido de tus documentos ni lo analizamos con IA en nuestros servidores (el OCR se ejecuta 100% en tu dispositivo con Google ML Kit).</li>
+    <li>No vendemos ni compartimos tu información con terceros con fines publicitarios.</li>
+    <li>No rastreamos tu ubicación.</li>
+  </ul>
+
+  <h2>3. Cómo usamos tu información</h2>
+  <p>Usamos los datos que recopilamos únicamente para:</p>
+  <ul>
+    <li>Permitirte iniciar sesión y acceder a tus documentos desde cualquier dispositivo.</li>
+    <li>Mostrarte alertas antes de que tus documentos venzan.</li>
+    <li>Procesar suscripciones Premium a través de RevenueCat y Google Play.</li>
+    <li>Mejorar la app a partir de analíticas anónimas.</li>
+    <li>Resolver errores y dar soporte cuando nos contactes.</li>
+  </ul>
+
+  <h2>4. Dónde se guardan tus datos</h2>
+  <ul>
+    <li><strong>Documentos e imágenes:</strong> en <a href="https://supabase.com" target="_blank" rel="noopener">Supabase</a>, un proveedor de infraestructura en la nube que cumple con GDPR. Los archivos están protegidos con URLs firmadas temporales y Row Level Security — solo tú puedes acceder a los tuyos.</li>
+    <li><strong>Contactos de confianza:</strong> en el almacenamiento local de tu teléfono. Nunca abandonan tu dispositivo.</li>
+    <li><strong>Pagos:</strong> procesados por Google Play Billing y gestionados por RevenueCat. Nunca vemos ni guardamos información de tarjeta de crédito.</li>
+  </ul>
+
+  <h2>5. Con quién compartimos tu información</h2>
+  <p>Compartimos datos únicamente con los proveedores estrictamente necesarios para que la app funcione:</p>
+  <ul>
+    <li><strong>Supabase</strong> — almacenamiento de documentos y autenticación. <a href="https://supabase.com/privacy" target="_blank" rel="noopener">Su política</a>.</li>
+    <li><strong>RevenueCat</strong> — gestión de suscripciones. <a href="https://www.revenuecat.com/privacy/" target="_blank" rel="noopener">Su política</a>.</li>
+    <li><strong>Google Play</strong> — procesamiento de pagos. <a href="https://policies.google.com/privacy" target="_blank" rel="noopener">Su política</a>.</li>
+    <li><strong>PostHog</strong> — analíticas anónimas. <a href="https://posthog.com/privacy" target="_blank" rel="noopener">Su política</a>.</li>
+  </ul>
+  <p>No compartimos tu información con anunciantes ni con terceros con fines comerciales.</p>
+
+  <h2>6. Tus derechos</h2>
+  <p>Tienes derecho a:</p>
+  <ul>
+    <li><strong>Acceder</strong> a los datos que tenemos sobre ti.</li>
+    <li><strong>Corregir</strong> información incorrecta en tu perfil.</li>
+    <li><strong>Eliminar</strong> tu cuenta y todos tus datos en cualquier momento. Escríbenos a <a href="mailto:vencrapp@gmail.com">vencrapp@gmail.com</a> con el asunto "Eliminar mi cuenta" y lo procesaremos en 7 días hábiles.</li>
+    <li><strong>Exportar</strong> tus documentos en formato comprimido (.zip).</li>
+    <li><strong>Oponerte</strong> al procesamiento de tus datos para analíticas — contáctanos y lo desactivamos en tu cuenta.</li>
+  </ul>
+
+  <h2>7. Seguridad</h2>
+  <p>Protegemos tus datos con:</p>
+  <ul>
+    <li>Conexiones cifradas (HTTPS/TLS) en todo momento.</li>
+    <li>Row Level Security en la base de datos — cada usuario solo puede ver sus propios documentos.</li>
+    <li>URLs firmadas temporales para los archivos — expiran automáticamente.</li>
+    <li>Autenticación biométrica opcional en el dispositivo.</li>
+  </ul>
+  <p>Aun así, ninguna plataforma digital es 100% invulnerable. Recomendamos usar contraseñas fuertes y activar la autenticación biométrica.</p>
+
+  <h2>8. Menores de edad</h2>
+  <p>Vencr no está dirigida a menores de 13 años. Si eres padre o madre y descubres que tu hijo nos ha enviado información sin tu consentimiento, contáctanos y la eliminaremos.</p>
+
+  <h2>9. Retención de datos</h2>
+  <p>Guardamos tus datos mientras tu cuenta esté activa. Si solicitas eliminar tu cuenta, borramos todo en un máximo de 7 días hábiles, excepto los registros que por ley debamos conservar (como comprobantes de pago, que guardamos por 5 años).</p>
+
+  <h2>10. Transferencias internacionales</h2>
+  <p>Nuestros proveedores (Supabase, RevenueCat, Google) operan desde Estados Unidos y Europa. Al usar Vencr aceptas que tus datos pueden ser procesados en esos países bajo estándares de seguridad equivalentes a los locales.</p>
+
+  <h2>11. Cambios en esta política</h2>
+  <p>Si hacemos cambios importantes, te avisaremos por correo o dentro de la app antes de que entren en vigor. La fecha "Última actualización" al inicio del documento siempre muestra la versión más reciente.</p>
+
+  <h2>12. Contacto</h2>
+  <p>Si tienes preguntas, reclamos o sugerencias sobre privacidad, escríbenos a <a href="mailto:vencrapp@gmail.com">vencrapp@gmail.com</a>. Respondemos en máximo 48 horas.</p>
+
+  <footer>
+    <p>© 2026 Vencr. Panamá, República de Panamá.</p>
+  </footer>
+
+</div>
+</body>
+</html>
