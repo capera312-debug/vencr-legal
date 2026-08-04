@@ -1,0 +1,16 @@
+{
+  "name": "communities-app",
+  "version": "0.1.0",
+  "description": "Communities — burbujas de comunidad por ubicación con comentarios anónimos",
+  "private": true,
+  "type": "commonjs",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node server/index.js"
+  },
+  "dependencies": {},
+  "engines": {
+    "node": ">=18"
+  }
+}

@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Communities</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+
+  <header class="topbar">
+    <div class="brand">Communities</div>
+    <div id="status" class="status">Buscando tu ubicación…</div>
+  </header>
+
+  <main id="bubbleField" class="bubble-field" aria-label="Comunidades cercanas"></main>
+
+  <section id="panel" class="panel hidden">
+    <div class="panel-header">
+      <div>
+        <div class="panel-title">Comunidad actual</div>
+        <div id="panelSubtitle" class="panel-subtitle"></div>
+      </div>
+      <button id="closePanel" class="icon-btn" aria-label="Cerrar">✕</button>
+    </div>
+
+    <div id="commentList" class="comment-list"></div>
+
+    <form id="commentForm" class="comment-form">
+      <span id="myLabel" class="my-label"></span>
+      <input id="commentInput" type="text" maxlength="280" placeholder="Comentá algo sobre este lugar…" autocomplete="off" />
+      <button type="submit">Enviar</button>
+    </form>
+  </section>
+
+  <button id="rotateIdentity" class="rotate-btn" title="Volver a empezar como perfil incógnito nuevo">🔄 Nuevo perfil incógnito</button>
+
+</div>
+<script src="app.js"></script>
+</body>
+</html>
