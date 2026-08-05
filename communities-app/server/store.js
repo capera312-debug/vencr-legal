@@ -7,22 +7,25 @@ const dataPath = process.env.DATA_PATH || path.join(__dirname, "..", "data.json"
 
 function emptyState() {
   return {
-    nextCommunityId: 1,
     nextCommentId: 1,
     nextEntityId: 1,
     nextAdId: 1,
 
     // anonymous individuals — never linked to a real identity
     identities: {}, // anonId -> { label, createdAt }
-    comments: [], // { id, communityId, anonId, label, body, createdAt }
+    // communities are not created by anyone — they're derived from
+    // location (see places.js) — so comments key on a placeId (string),
+    // not a numeric community id owned by an entity
+    comments: [], // { id, placeId, anonId, label, body, createdAt }
 
     // commercial / public-entity accounts — the only accounts that can
-    // found a community or launch advertising
+    // pay to reach a place with advertising
     entities: [], // { id, businessName, category, email, salt, hash, createdAt }
     sessions: {}, // token -> { entityId, createdAt }
 
-    communities: [], // { id, name, description, ownerEntityId, ownerName, hue, lat, lng, radiusKm, createdAt }
-    ads: [], // { id, title, text, discountText, ownerEntityId, ownerName, hue, lat, lng, radiusKm, createdAt, expiresAt }
+    // ads target a level of the place hierarchy (micro/corregimiento/
+    // district/province/country), not a hand-picked lat/lng+radius
+    ads: [], // { id, title, text, discountText, targetLevel, targetId, targetName, ownerEntityId, ownerName, hue, createdAt, expiresAt }
   };
 }
 

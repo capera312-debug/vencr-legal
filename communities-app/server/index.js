@@ -13,23 +13,17 @@ const {
   verifyPassword,
   newToken,
 } = require("./auth");
+const {
+  resolveLocation,
+  nearbyPlaces,
+  targetOptionsFor,
+  adMatchesLocation,
+} = require("./places");
 
 const PUBLIC_DIR = path.join(__dirname, "..", "public");
 const PORT = process.env.PORT || 3000;
 
 // ---- generic helpers ----------------------------------------------------
-
-function haversineKm(lat1, lng1, lat2, lng2) {
-  const R = 6371;
-  const dLat = ((lat2 - lat1) * Math.PI) / 180;
-  const dLng = ((lng2 - lng1) * Math.PI) / 180;
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos((lat1 * Math.PI) / 180) *
-      Math.cos((lat2 * Math.PI) / 180) *
-      Math.sin(dLng / 2) ** 2;
-  return 2 * R * Math.asin(Math.sqrt(a));
-}
 
 function sanitizeText(raw, maxLen) {
   return String(raw || "")
@@ -38,11 +32,7 @@ function sanitizeText(raw, maxLen) {
     .slice(0, maxLen);
 }
 
-function clampNumber(n, min, max, fallback) {
-  const v = Number(n);
-  if (Number.isNaN(v)) return fallback;
-  return Math.max(min, Math.min(max, v));
-}
+const PLACE_ID_RE = /^[a-z0-9-]{1,64}$/;
 
 function publicEntity(entity) {
   return { id: entity.id, businessName: entity.businessName, category: entity.category, email: entity.email };
@@ -76,8 +66,8 @@ function ensureIdentity(anonId) {
   return identity;
 }
 
-function communityStats(communityId) {
-  const comments = state.comments.filter((c) => c.communityId === communityId);
+function placeStats(placeId) {
+  const comments = state.comments.filter((c) => c.placeId === placeId);
   return {
     count: comments.length,
     lastActiveAt: comments.length ? comments[comments.length - 1].createdAt : null,
@@ -88,12 +78,12 @@ function communityStats(communityId) {
 const lastPostAt = new Map();
 const COOLDOWN_MS = 4000;
 
-// ---- SSE subscribers (community comment streams) ---------------------------
+// ---- SSE subscribers (per-place comment streams) ---------------------------
 
-const subscribers = new Map(); // communityId -> Set<res>
+const subscribers = new Map(); // placeId -> Set<res>
 
-function broadcastToCommunity(communityId, payload) {
-  const sockets = subscribers.get(communityId);
+function broadcastToPlace(placeId, payload) {
+  const sockets = subscribers.get(placeId);
   if (!sockets) return;
   const data = `data: ${JSON.stringify(payload)}\n\n`;
   for (const res of sockets) res.write(data);
@@ -167,11 +157,11 @@ function serveStatic(req, res, pathname) {
 async function handleApi(req, res, url) {
   const parts = url.pathname.split("/").filter(Boolean); // ["api", ...]
 
-  // ---- entity accounts --------------------------------------------------
-
   if (req.method === "GET" && parts[1] === "categories") {
     return sendJson(res, 200, { categories: CATEGORIES });
   }
+
+  // ---- entity accounts --------------------------------------------------
 
   if (req.method === "POST" && parts[1] === "entities" && parts[2] === "register") {
     let body;
@@ -198,15 +188,7 @@ async function handleApi(req, res, url) {
     if (findEntityByEmail(email)) return sendJson(res, 409, { error: "ya existe una cuenta con ese email" });
 
     const { salt, hash } = hashPassword(password);
-    const entity = {
-      id: state.nextEntityId++,
-      businessName,
-      category,
-      email,
-      salt,
-      hash,
-      createdAt: Date.now(),
-    };
+    const entity = { id: state.nextEntityId++, businessName, category, email, salt, hash, createdAt: Date.now() };
     state.entities.push(entity);
 
     const token = newToken();
@@ -248,9 +230,8 @@ async function handleApi(req, res, url) {
   if (req.method === "GET" && parts[1] === "entities" && parts[2] === "me") {
     const entity = entityFromRequest(req);
     if (!entity) return sendJson(res, 401, { error: "sesión inválida" });
-    const communities = state.communities.filter((c) => c.ownerEntityId === entity.id);
     const ads = state.ads.filter((a) => a.ownerEntityId === entity.id);
-    return sendJson(res, 200, { entity: publicEntity(entity), communities, ads });
+    return sendJson(res, 200, { entity: publicEntity(entity), ads });
   }
 
   // GET /api/identity/:anonId — anonymous individual alias
@@ -259,74 +240,31 @@ async function handleApi(req, res, url) {
     return sendJson(res, 200, { anonId: parts[2], label: identity.label });
   }
 
-  // ---- communities (entity-owned) ----------------------------------------
-
-  if (req.method === "POST" && parts[1] === "communities" && parts.length === 2) {
-    const entity = entityFromRequest(req);
-    if (!entity) return sendJson(res, 401, { error: "necesitás una cuenta de comercio/entidad para crear una comunidad" });
-
-    let body;
-    try {
-      body = await readJsonBody(req);
-    } catch {
-      return sendJson(res, 400, { error: "cuerpo inválido" });
-    }
-
-    const name = sanitizeText(body.name, 60);
-    const description = sanitizeText(body.description, 200);
-    const lat = parseFloat(body.lat);
-    const lng = parseFloat(body.lng);
-    if (!name) return sendJson(res, 400, { error: "falta el nombre de la comunidad" });
-    if (Number.isNaN(lat) || Number.isNaN(lng)) return sendJson(res, 400, { error: "ubicación inválida" });
-    const radiusKm = clampNumber(body.radiusKm, 0.2, 5, 1.2);
-
-    const community = {
-      id: state.nextCommunityId++,
-      name,
-      description,
-      ownerEntityId: entity.id,
-      ownerName: entity.businessName,
-      hue: hueForCategory(entity.category),
-      lat,
-      lng,
-      radiusKm,
-      createdAt: Date.now(),
-    };
-    state.communities.push(community);
-    save();
-    return sendJson(res, 201, { community });
+  // GET /api/location?lat=&lng= — resolved place hierarchy + valid ad
+  // targeting options for that spot (used by the business portal)
+  if (req.method === "GET" && parts[1] === "location") {
+    const lat = parseFloat(url.searchParams.get("lat"));
+    const lng = parseFloat(url.searchParams.get("lng"));
+    if (Number.isNaN(lat) || Number.isNaN(lng)) return sendJson(res, 400, { error: "lat/lng requeridos" });
+    const location = resolveLocation(lat, lng);
+    return sendJson(res, 200, { location, targetOptions: targetOptionsFor(location) });
   }
 
-  if (req.method === "DELETE" && parts[1] === "communities" && parts[2] && parts.length === 3) {
-    const entity = entityFromRequest(req);
-    if (!entity) return sendJson(res, 401, { error: "sesión inválida" });
-    const id = Number(parts[2]);
-    const community = state.communities.find((c) => c.id === id);
-    if (!community) return sendJson(res, 404, { error: "no encontrada" });
-    if (community.ownerEntityId !== entity.id) return sendJson(res, 403, { error: "no te pertenece" });
-    state.communities = state.communities.filter((c) => c.id !== id);
-    state.comments = state.comments.filter((c) => c.communityId !== id);
-    save();
-    return sendJson(res, 200, { ok: true });
-  }
+  // ---- places: comments (anonymous, open to anyone) --------------------------
 
-  // GET /api/communities/:id/comments
-  if (req.method === "GET" && parts[1] === "communities" && parts[3] === "comments") {
-    const communityId = Number(parts[2]);
-    const community = state.communities.find((c) => c.id === communityId);
-    if (!community) return sendJson(res, 404, { error: "comunidad no encontrada" });
+  if (req.method === "GET" && parts[1] === "places" && parts[3] === "comments") {
+    const placeId = decodeURIComponent(parts[2] || "");
+    if (!PLACE_ID_RE.test(placeId)) return sendJson(res, 400, { error: "lugar inválido" });
     const comments = state.comments
-      .filter((c) => c.communityId === communityId)
+      .filter((c) => c.placeId === placeId)
       .slice(-100)
       .map(({ id, label, body, createdAt }) => ({ id, label, body, created_at: createdAt }));
-    return sendJson(res, 200, { community, comments });
+    return sendJson(res, 200, { placeId, comments });
   }
 
-  // POST /api/communities/:id/comments — anonymous individuals, no entity account needed
-  if (req.method === "POST" && parts[1] === "communities" && parts[3] === "comments") {
-    const communityId = Number(parts[2]);
-    const community = state.communities.find((c) => c.id === communityId);
-    if (!community) return sendJson(res, 404, { error: "comunidad no encontrada" });
+  if (req.method === "POST" && parts[1] === "places" && parts[3] === "comments") {
+    const placeId = decodeURIComponent(parts[2] || "");
+    if (!PLACE_ID_RE.test(placeId)) return sendJson(res, 400, { error: "lugar inválido" });
 
     let body;
     try {
@@ -348,28 +286,19 @@ async function handleApi(req, res, url) {
     lastPostAt.set(anonId, now);
 
     const identity = ensureIdentity(anonId);
-    const comment = {
-      id: state.nextCommentId++,
-      communityId,
-      anonId,
-      label: identity.label,
-      body: text,
-      createdAt: now,
-    };
+    const comment = { id: state.nextCommentId++, placeId, anonId, label: identity.label, body: text, createdAt: now };
     state.comments.push(comment);
     save();
 
     const outComment = { id: comment.id, label: comment.label, body: comment.body, created_at: now };
-    broadcastToCommunity(communityId, { type: "comment", comment: outComment });
+    broadcastToPlace(placeId, { type: "comment", comment: outComment });
 
     return sendJson(res, 201, { comment: outComment });
   }
 
-  // GET /api/communities/:id/stream (Server-Sent Events)
-  if (req.method === "GET" && parts[1] === "communities" && parts[3] === "stream") {
-    const communityId = Number(parts[2]);
-    const community = state.communities.find((c) => c.id === communityId);
-    if (!community) return sendJson(res, 404, { error: "comunidad no encontrada" });
+  if (req.method === "GET" && parts[1] === "places" && parts[3] === "stream") {
+    const placeId = decodeURIComponent(parts[2] || "");
+    if (!PLACE_ID_RE.test(placeId)) return sendJson(res, 400, { error: "lugar inválido" });
 
     res.writeHead(200, {
       "Content-Type": "text/event-stream",
@@ -378,19 +307,18 @@ async function handleApi(req, res, url) {
     });
     res.write("\n");
 
-    if (!subscribers.has(communityId)) subscribers.set(communityId, new Set());
-    subscribers.get(communityId).add(res);
+    if (!subscribers.has(placeId)) subscribers.set(placeId, new Set());
+    subscribers.get(placeId).add(res);
 
     const heartbeat = setInterval(() => res.write(": ping\n\n"), 25000);
-
     req.on("close", () => {
       clearInterval(heartbeat);
-      subscribers.get(communityId)?.delete(res);
+      subscribers.get(placeId)?.delete(res);
     });
     return;
   }
 
-  // ---- ads (entity-owned, independent of communities) -----------------------
+  // ---- ads: entity-owned, targeted at a level of the place hierarchy --------
 
   if (req.method === "POST" && parts[1] === "ads" && parts.length === 2) {
     const entity = entityFromRequest(req);
@@ -408,24 +336,33 @@ async function handleApi(req, res, url) {
     const discountText = body.discountText ? sanitizeText(body.discountText, 60) : null;
     const lat = parseFloat(body.lat);
     const lng = parseFloat(body.lng);
+    const targetLevel = String(body.targetLevel || "");
     if (!title) return sendJson(res, 400, { error: "falta el título" });
     if (!text) return sendJson(res, 400, { error: "falta el texto del anuncio" });
     if (Number.isNaN(lat) || Number.isNaN(lng)) return sendJson(res, 400, { error: "ubicación inválida" });
-    const radiusKm = clampNumber(body.radiusKm, 0.2, 5, 1);
-    const durationHours = clampNumber(body.durationHours, 1, 24 * 30, 24 * 7);
 
+    // you can only target a level of the hierarchy your current location is
+    // actually part of — no picking an arbitrary corregimiento you're not in
+    const location = resolveLocation(lat, lng);
+    const options = targetOptionsFor(location);
+    const target = options.find((o) => o.level === targetLevel && o.id === String(body.targetId));
+    if (!target) {
+      return sendJson(res, 400, { error: "el alcance elegido no corresponde a tu ubicación actual" });
+    }
+
+    const durationHours = Math.max(1, Math.min(24 * 30, Number(body.durationHours) || 24 * 7));
     const now = Date.now();
     const ad = {
       id: state.nextAdId++,
       title,
       text,
       discountText,
+      targetLevel: target.level,
+      targetId: target.id,
+      targetName: target.name,
       ownerEntityId: entity.id,
       ownerName: entity.businessName,
       hue: hueForCategory(entity.category),
-      lat,
-      lng,
-      radiusKm,
       createdAt: now,
       expiresAt: now + durationHours * 3600 * 1000,
     };
@@ -455,53 +392,52 @@ async function handleApi(req, res, url) {
       return sendJson(res, 400, { error: "lat/lng requeridos" });
     }
 
-    const FRINGE_KM = 2; // communities are visible a bit beyond their own radius, so they're discoverable while approaching
-    const communities = state.communities
-      .map((c) => ({ c, distanceKm: haversineKm(lat, lng, c.lat, c.lng) }))
-      .filter(({ c, distanceKm }) => distanceKm <= c.radiusKm + FRINGE_KM)
-      .sort((a, b) => a.distanceKm - b.distanceKm)
-      .slice(0, 20)
-      .map(({ c, distanceKm }) => {
-        const stats = communityStats(c.id);
-        return {
-          id: c.id,
-          type: "community",
-          name: c.name,
-          description: c.description,
-          ownerName: c.ownerName,
-          hue: c.hue,
-          center: { lat: c.lat, lng: c.lng },
-          radiusKm: c.radiusKm,
-          distanceKm: Math.round(distanceKm * 100) / 100,
-          inside: distanceKm <= c.radiusKm,
+    const location = resolveLocation(lat, lng);
+
+    const microStats = placeStats(location.micro.id);
+    const communities = [
+      {
+        id: location.micro.id,
+        name: location.micro.name,
+        kind: location.micro.kind,
+        isCurrent: true,
+        distanceKm: 0,
+        commentCount: microStats.count,
+        lastActiveAt: microStats.lastActiveAt,
+      },
+    ];
+
+    if (location.known) {
+      nearbyPlaces(lat, lng, location.micro.id).forEach((p) => {
+        const stats = placeStats(p.id);
+        communities.push({
+          id: p.id,
+          name: p.name,
+          kind: p.kind,
+          isCurrent: false,
+          distanceKm: Math.round(p.distanceKm * 100) / 100,
           commentCount: stats.count,
           lastActiveAt: stats.lastActiveAt,
-        };
+        });
       });
+    }
 
     const now = Date.now();
     const ads = state.ads
       .filter((a) => a.expiresAt > now)
-      .map((a) => ({ a, distanceKm: haversineKm(lat, lng, a.lat, a.lng) }))
-      .filter(({ a, distanceKm }) => distanceKm <= a.radiusKm * 2)
-      .sort((a, b) => a.distanceKm - b.distanceKm)
-      .slice(0, 20)
-      .map(({ a, distanceKm }) => ({
+      .filter((a) => adMatchesLocation(a, location))
+      .map((a) => ({
         id: a.id,
-        type: "ad",
         title: a.title,
         text: a.text,
         discountText: a.discountText,
         ownerName: a.ownerName,
         hue: a.hue,
-        center: { lat: a.lat, lng: a.lng },
-        radiusKm: a.radiusKm,
-        distanceKm: Math.round(distanceKm * 100) / 100,
-        inside: distanceKm <= a.radiusKm,
-        proximity: Math.max(0, Math.min(1, 1 - distanceKm / (a.radiusKm * 2))),
+        targetLevel: a.targetLevel,
+        targetName: a.targetName,
       }));
 
-    return sendJson(res, 200, { communities, ads });
+    return sendJson(res, 200, { location, communities, ads });
   }
 
   return sendJson(res, 404, { error: "no encontrado" });

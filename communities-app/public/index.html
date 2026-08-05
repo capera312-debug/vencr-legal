@@ -10,12 +10,15 @@
 <div id="app">
 
   <header class="topbar">
-    <div class="brand">Communities</div>
-    <div class="topbar-actions">
-      <div id="status" class="status">Buscando tu ubicación…</div>
-      <button id="openBusiness" class="chip-btn" type="button">🏢 Comercios y entidades</button>
-      <button id="rotateIdentity" class="chip-btn" title="Volver a empezar como perfil incógnito nuevo" type="button">🔄 Nuevo perfil incógnito</button>
+    <div class="brand-row">
+      <div class="brand">Communities</div>
+      <div class="topbar-actions">
+        <button id="openBusiness" class="chip-btn" type="button">🏢 Comercios y entidades</button>
+        <button id="rotateIdentity" class="chip-btn" title="Volver a empezar como perfil incógnito nuevo" type="button">🔄 Nuevo perfil incógnito</button>
+      </div>
     </div>
+    <div id="breadcrumb" class="breadcrumb"></div>
+    <div id="status" class="status"></div>
   </header>
 
   <main id="bubbleField" class="bubble-field" aria-label="Comunidades y publicidad cercanas"></main>
@@ -54,7 +57,7 @@
         <button id="closeBusiness" class="icon-btn" aria-label="Cerrar">✕</button>
       </div>
 
-      <p class="business-note">Solo cuentas de comercios o entidades públicas pueden crear comunidades o publicidad. Las personas siguen comentando de forma anónima dentro de las comunidades ya creadas.</p>
+      <p class="business-note">Las comunidades no las crea nadie: existen por ubicación real (país → provincia → distrito → corregimiento → lugar). Cualquier persona comenta ahí de forma anónima. Lo único que una cuenta de comercio o entidad puede hacer es <strong>pagar por publicidad</strong> dirigida a cualquier nivel de esa jerarquía, desde un solo lugar hasta el país entero.</p>
 
       <div id="authTabs" class="auth-tabs">
         <button type="button" class="auth-tab active" data-tab="login">Iniciar sesión</button>
@@ -98,27 +101,7 @@
           <button id="logoutBtn" class="text-btn" type="button">Cerrar sesión</button>
         </div>
 
-        <div class="dashboard-actions">
-          <button id="showCreateCommunity" class="secondary-btn" type="button">+ Crear comunidad acá</button>
-          <button id="showCreateAd" class="secondary-btn" type="button">+ Lanzar publicidad acá</button>
-        </div>
-
-        <form id="createCommunityForm" class="create-form hidden">
-          <label>Nombre de la comunidad
-            <input type="text" id="communityName" maxlength="60" required />
-          </label>
-          <label>Descripción breve
-            <input type="text" id="communityDescription" maxlength="200" />
-          </label>
-          <label>Radio de alcance: <span id="communityRadiusLabel">1.2 km</span>
-            <input type="range" id="communityRadius" min="0.2" max="5" step="0.1" value="1.2" />
-          </label>
-          <div id="communityError" class="form-error"></div>
-          <div class="create-form-actions">
-            <button type="button" class="text-btn" id="cancelCreateCommunity">Cancelar</button>
-            <button type="submit">Crear comunidad</button>
-          </div>
-        </form>
+        <button id="showCreateAd" class="secondary-btn" type="button">+ Lanzar publicidad acá</button>
 
         <form id="createAdForm" class="create-form hidden">
           <label>Título
@@ -130,9 +113,10 @@
           <label>Descuento (opcional)
             <input type="text" id="adDiscountInput" maxlength="60" placeholder="ej: 20% off mostrando esto" />
           </label>
-          <label>Radio de alcance: <span id="adRadiusLabel">1 km</span>
-            <input type="range" id="adRadius" min="0.2" max="5" step="0.1" value="1" />
-          </label>
+          <div>
+            <div class="field-label">Alcance (según tu ubicación actual)</div>
+            <div id="targetOptions" class="target-options"></div>
+          </div>
           <label>Duración: <span id="adDurationLabel">7 días</span>
             <input type="range" id="adDuration" min="1" max="720" step="1" value="168" />
           </label>
@@ -143,15 +127,9 @@
           </div>
         </form>
 
-        <div class="dashboard-lists">
-          <div>
-            <div class="dashboard-list-title">Tus comunidades</div>
-            <div id="myCommunities" class="owned-list"></div>
-          </div>
-          <div>
-            <div class="dashboard-list-title">Tu publicidad</div>
-            <div id="myAds" class="owned-list"></div>
-          </div>
+        <div>
+          <div class="dashboard-list-title">Tu publicidad</div>
+          <div id="myAds" class="owned-list"></div>
         </div>
       </div>
     </div>

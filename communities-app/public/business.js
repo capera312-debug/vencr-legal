@@ -17,38 +17,29 @@
   const dashCategory = document.getElementById("dashCategory");
   const logoutBtn = document.getElementById("logoutBtn");
 
-  const showCreateCommunityBtn = document.getElementById("showCreateCommunity");
   const showCreateAdBtn = document.getElementById("showCreateAd");
-  const createCommunityForm = document.getElementById("createCommunityForm");
   const createAdForm = document.getElementById("createAdForm");
-  const cancelCreateCommunity = document.getElementById("cancelCreateCommunity");
   const cancelCreateAd = document.getElementById("cancelCreateAd");
-  const communityError = document.getElementById("communityError");
   const adError = document.getElementById("adError");
+  const targetOptionsEl = document.getElementById("targetOptions");
 
-  const communityRadius = document.getElementById("communityRadius");
-  const communityRadiusLabel = document.getElementById("communityRadiusLabel");
-  const adRadius = document.getElementById("adRadius");
-  const adRadiusLabel = document.getElementById("adRadiusLabel");
   const adDuration = document.getElementById("adDuration");
   const adDurationLabel = document.getElementById("adDurationLabel");
 
-  const myCommunitiesEl = document.getElementById("myCommunities");
   const myAdsEl = document.getElementById("myAds");
 
   let categories = [];
   let session = loadSession();
+  let lastTargetOptions = [];
 
   function loadSession() {
     const token = localStorage.getItem(TOKEN_KEY);
     return token ? { token } : null;
   }
-
   function saveSession(token) {
     localStorage.setItem(TOKEN_KEY, token);
     session = { token };
   }
-
   function clearSession() {
     localStorage.removeItem(TOKEN_KEY);
     session = null;
@@ -75,6 +66,14 @@
       );
     });
   }
+
+  const LEVEL_LABEL = {
+    micro: "Solo este lugar",
+    corregimiento: "Todo el corregimiento",
+    district: "Todo el distrito",
+    province: "Toda la provincia",
+    country: "Todo el país",
+  };
 
   // ---- categories ---------------------------------------------------------
 
@@ -110,7 +109,7 @@
       try {
         const data = await api("/api/entities/me");
         showDashboardView(data.entity);
-        renderOwned(data.communities, data.ads);
+        renderOwned(data.ads);
       } catch {
         clearSession();
         authTabs.classList.remove("hidden");
@@ -154,7 +153,7 @@
       saveSession(data.token);
       showDashboardView(data.entity);
       const me = await api("/api/entities/me");
-      renderOwned(me.communities, me.ads);
+      renderOwned(me.ads);
     } catch (err) {
       loginError.textContent = err.message;
     }
@@ -175,7 +174,7 @@
       });
       saveSession(data.token);
       showDashboardView(data.entity);
-      renderOwned([], []);
+      renderOwned([]);
     } catch (err) {
       registerError.textContent = err.message;
     }
@@ -190,67 +189,59 @@
     showAuthView();
   });
 
-  // ---- create community / ad -----------------------------------------------
+  // ---- create ad ------------------------------------------------------------
 
-  function fmtRadius(km) {
-    return `${Number(km).toFixed(1)} km`;
-  }
   function fmtDuration(hours) {
     const h = Number(hours);
     if (h < 24) return `${h} hora${h === 1 ? "" : "s"}`;
     const d = Math.round(h / 24);
     return `${d} día${d === 1 ? "" : "s"}`;
   }
-
-  communityRadius.addEventListener("input", () => {
-    communityRadiusLabel.textContent = fmtRadius(communityRadius.value);
-  });
-  adRadius.addEventListener("input", () => {
-    adRadiusLabel.textContent = fmtRadius(adRadius.value);
-  });
   adDuration.addEventListener("input", () => {
     adDurationLabel.textContent = fmtDuration(adDuration.value);
   });
 
-  showCreateCommunityBtn.addEventListener("click", () => {
-    createAdForm.classList.add("hidden");
-    createCommunityForm.classList.toggle("hidden");
-  });
-  showCreateAdBtn.addEventListener("click", () => {
-    createCommunityForm.classList.add("hidden");
-    createAdForm.classList.toggle("hidden");
-  });
-  cancelCreateCommunity.addEventListener("click", () => createCommunityForm.classList.add("hidden"));
-  cancelCreateAd.addEventListener("click", () => createAdForm.classList.add("hidden"));
-
-  createCommunityForm.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    communityError.textContent = "";
+  async function renderTargetOptions() {
+    targetOptionsEl.innerHTML = `<div class="owned-empty">Buscando tu ubicación…</div>`;
     try {
       const pos = await currentPosition();
-      await api("/api/communities", {
-        method: "POST",
-        body: JSON.stringify({
-          name: document.getElementById("communityName").value.trim(),
-          description: document.getElementById("communityDescription").value.trim(),
-          lat: pos.lat,
-          lng: pos.lng,
-          radiusKm: Number(communityRadius.value),
-        }),
-      });
-      createCommunityForm.reset();
-      createCommunityForm.classList.add("hidden");
-      const me = await api("/api/entities/me");
-      renderOwned(me.communities, me.ads);
-      if (window.CommunitiesApp) window.CommunitiesApp.refreshBubbles();
+      const data = await api(`/api/location?lat=${pos.lat}&lng=${pos.lng}`);
+      lastTargetOptions = data.targetOptions;
+      const notice = data.location.known
+        ? ""
+        : `<div class="owned-empty">Tu ubicación actual no está catalogada en esta demo — solo podés anunciar en esta zona puntual.</div>`;
+      targetOptionsEl.innerHTML = notice + lastTargetOptions
+        .map(
+          (o, i) => `
+        <label class="target-option">
+          <input type="radio" name="targetOption" value="${i}" ${i === 0 ? "checked" : ""} />
+          <span>${escapeHtml(o.name)}</span>
+          <span class="level-tag">${LEVEL_LABEL[o.level] || o.level}</span>
+        </label>
+      `
+        )
+        .join("");
     } catch (err) {
-      communityError.textContent = err.message === "sin geolocalización" ? "Necesitamos tu ubicación para crear la comunidad acá." : err.message;
+      targetOptionsEl.innerHTML = `<div class="owned-empty">${escapeHtml(err.message)}</div>`;
     }
+  }
+
+  showCreateAdBtn.addEventListener("click", () => {
+    const opening = createAdForm.classList.contains("hidden");
+    createAdForm.classList.toggle("hidden");
+    if (opening) renderTargetOptions();
   });
+  cancelCreateAd.addEventListener("click", () => createAdForm.classList.add("hidden"));
 
   createAdForm.addEventListener("submit", async (e) => {
     e.preventDefault();
     adError.textContent = "";
+    const picked = createAdForm.querySelector('input[name="targetOption"]:checked');
+    if (!picked || !lastTargetOptions[Number(picked.value)]) {
+      adError.textContent = "elegí un alcance para el anuncio";
+      return;
+    }
+    const target = lastTargetOptions[Number(picked.value)];
     try {
       const pos = await currentPosition();
       await api("/api/ads", {
@@ -261,57 +252,50 @@
           discountText: document.getElementById("adDiscountInput").value.trim() || null,
           lat: pos.lat,
           lng: pos.lng,
-          radiusKm: Number(adRadius.value),
+          targetLevel: target.level,
+          targetId: target.id,
           durationHours: Number(adDuration.value),
         }),
       });
       createAdForm.reset();
       createAdForm.classList.add("hidden");
       const me = await api("/api/entities/me");
-      renderOwned(me.communities, me.ads);
+      renderOwned(me.ads);
       if (window.CommunitiesApp) window.CommunitiesApp.refreshBubbles();
     } catch (err) {
       adError.textContent = err.message === "sin geolocalización" ? "Necesitamos tu ubicación para publicar acá." : err.message;
     }
   });
 
-  // ---- owned lists ----------------------------------------------------------
+  // ---- owned list ----------------------------------------------------------
 
-  function renderOwned(communities, ads) {
-    myCommunitiesEl.innerHTML = communities.length
-      ? communities.map((c) => ownedRow(c.id, c.name, `radio ${fmtRadius(c.radiusKm)}`, "community")).join("")
-      : `<div class="owned-empty">Todavía no creaste ninguna comunidad.</div>`;
-
+  function renderOwned(ads) {
     myAdsEl.innerHTML = ads.length
-      ? ads.map((a) => ownedRow(a.id, a.title, `hasta ${new Date(a.expiresAt).toLocaleDateString("es-AR")}`, "ad")).join("")
+      ? ads.map((a) => ownedRow(a.id, a.title, `${LEVEL_LABEL[a.targetLevel] || a.targetLevel} · ${a.targetName} · hasta ${new Date(a.expiresAt).toLocaleDateString("es-AR")}`)).join("")
       : `<div class="owned-empty">Todavía no lanzaste publicidad.</div>`;
 
-    myCommunitiesEl.querySelectorAll("button[data-delete]").forEach((btn) => {
-      btn.addEventListener("click", () => deleteOwned("community", btn.dataset.delete));
-    });
     myAdsEl.querySelectorAll("button[data-delete]").forEach((btn) => {
-      btn.addEventListener("click", () => deleteOwned("ad", btn.dataset.delete));
+      btn.addEventListener("click", () => deleteAd(btn.dataset.delete));
     });
   }
 
-  function ownedRow(id, name, meta, kind) {
+  function ownedRow(id, name, meta) {
     return `
       <div class="owned-item">
         <div>
           <div class="owned-name">${escapeHtml(name)}</div>
           <div class="owned-meta">${escapeHtml(meta)}</div>
         </div>
-        <button type="button" data-delete="${id}" data-kind="${kind}">Borrar</button>
+        <button type="button" data-delete="${id}">Borrar</button>
       </div>
     `;
   }
 
-  async function deleteOwned(kind, id) {
-    const path = kind === "community" ? `/api/communities/${id}` : `/api/ads/${id}`;
+  async function deleteAd(id) {
     try {
-      await api(path, { method: "DELETE" });
+      await api(`/api/ads/${id}`, { method: "DELETE" });
       const me = await api("/api/entities/me");
-      renderOwned(me.communities, me.ads);
+      renderOwned(me.ads);
       if (window.CommunitiesApp) window.CommunitiesApp.refreshBubbles();
     } catch (err) {
       alert(err.message);

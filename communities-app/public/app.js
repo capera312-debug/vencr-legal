@@ -1,5 +1,6 @@
 (() => {
   const statusEl = document.getElementById("status");
+  const breadcrumbEl = document.getElementById("breadcrumb");
   const fieldEl = document.getElementById("bubbleField");
   const panelEl = document.getElementById("panel");
   const panelTitleEl = document.getElementById("panelTitle");
@@ -16,18 +17,32 @@
   const rotateBtn = document.getElementById("rotateIdentity");
   const myLabelEl = document.getElementById("myLabel");
 
+  // Places have no owner and no chosen color — this is just a light visual
+  // cue for what kind of place you're looking at, reusing the same palette
+  // categories.js uses for businesses (parks are public space, PH is
+  // residential, etc).
+  const KIND_HUE = {
+    parque: "#5fa85f",
+    ph: "#4f7fc9",
+    establecimiento: "#c97a3d",
+    zona: "#8c7a63",
+  };
+
   const state = {
     anonId: null,
     label: null,
     lastPos: null,
-    activeCommunityId: null,
+    activePlaceId: null,
     eventSource: null,
     renderedCommentIds: new Set(),
   };
 
-  window.CommunitiesApp = { getLastPos: () => state.lastPos, refreshBubbles: () => {
-    if (state.lastPos) loadBubbles(state.lastPos.lat, state.lastPos.lng);
-  } };
+  window.CommunitiesApp = {
+    getLastPos: () => state.lastPos,
+    refreshBubbles: () => {
+      if (state.lastPos) loadBubbles(state.lastPos.lat, state.lastPos.lng);
+    },
+  };
 
   // ---- anonymous identity -------------------------------------------
 
@@ -103,6 +118,20 @@
     return 2 * R * Math.asin(Math.sqrt(a));
   }
 
+  // ---- breadcrumb ---------------------------------------------------------
+
+  function renderBreadcrumb(location) {
+    if (!location.known) {
+      breadcrumbEl.textContent = "Zona sin catalogar en esta demo — sin geocodificación real acá";
+      breadcrumbEl.classList.add("unknown");
+      return;
+    }
+    breadcrumbEl.classList.remove("unknown");
+    const parts = [location.country.name, location.province.name, location.district.name, location.corregimiento.name]
+      .filter((v, i, arr) => arr.indexOf(v) === i); // Panamá/Panamá/Panamá de sobra: no repetir
+    breadcrumbEl.textContent = parts.join(" › ");
+  }
+
   // ---- bubbles ----------------------------------------------------------
 
   function hashSeed(str) {
@@ -118,11 +147,11 @@
       const res = await fetch(`/api/bubbles?lat=${lat}&lng=${lng}`);
       if (!res.ok) throw new Error("bubbles fetch failed");
       const data = await res.json();
+      renderBreadcrumb(data.location);
       renderBubbles(data.communities, data.ads);
-      const total = data.communities.length + data.ads.length;
-      statusEl.textContent = total
-        ? `${data.communities.length} comunidad${data.communities.length === 1 ? "" : "es"} · ${data.ads.length} publicidad${data.ads.length === 1 ? "" : "es"} cerca`
-        : "Nada activado cerca tuyo todavía";
+      statusEl.textContent = data.ads.length
+        ? `${data.ads.length} publicidad${data.ads.length === 1 ? "" : "es"} llegando hasta acá`
+        : "";
     } catch (e) {
       statusEl.textContent = "No pudimos cargar lo que hay cerca";
     }
@@ -132,13 +161,10 @@
     fieldEl.innerHTML = `<div class="empty-state">${msg}</div>`;
   }
 
-  // Bubbles never get placed under the topbar — its buttons sit above the
-  // field and would otherwise steal clicks from a bubble underneath.
-  const TOP_SAFE_PX = 118;
+  // Places never get placed under the topbar — its buttons and breadcrumb
+  // sit above the field and would otherwise steal clicks from a bubble.
+  const TOP_SAFE_PX = 150;
 
-  // Places bubbles on the field avoiding overlap: each bubble gets a
-  // seed-based starting spot, then nudges outward along a spiral until it
-  // clears every bubble already placed (or gives up after a few tries).
   function placeNonOverlapping(items, placed, w, h) {
     const GAP = 10;
     items.forEach((item) => {
@@ -166,9 +192,7 @@
   function renderBubbles(communities, ads) {
     fieldEl.innerHTML = "";
     if (!communities.length && !ads.length) {
-      renderEmptyState(
-        "Todavía no hay comunidades ni publicidad activadas cerca tuyo. Solo comercios y entidades pueden crear la primera — mirá \"Comercios y entidades\" arriba."
-      );
+      renderEmptyState("No hay nada activo cerca tuyo todavía.");
       return;
     }
 
@@ -182,7 +206,7 @@
         seed,
         baseX: w * (0.15 + ((seed % 80) / 100)),
         baseY: h * (0.15 + (((seed >> 8) % 60) / 100)),
-        size: Math.min(160, Math.max(72, 72 + c.commentCount * 6)),
+        size: c.isCurrent ? Math.min(190, 140 + c.commentCount * 5) : Math.min(118, 66 + c.commentCount * 5),
       };
     });
     const adItems = ads.map((a) => {
@@ -192,20 +216,19 @@
         seed,
         baseX: w * (0.15 + (((seed >> 3) % 80) / 100)),
         baseY: h * (0.15 + (((seed >> 11) % 60) / 100)),
-        size: Math.round(58 + a.proximity * 60),
+        size: 90,
       };
     });
 
-    // communities are placed first so they claim their spot; ads (usually
-    // smaller and more numerous) fill in around them
     const placed = [];
     placeNonOverlapping(communityItems, placed, w, h);
     placeNonOverlapping(adItems, placed, w, h);
 
     communityItems.forEach(({ c, seed, size, x, y }) => {
+      const hue = KIND_HUE[c.kind] || KIND_HUE.zona;
       const el = document.createElement("button");
-      el.className = "bubble" + (c.inside ? " current" : "");
-      el.style.setProperty("--hue", c.hue);
+      el.className = "bubble" + (c.isCurrent ? " current" : "");
+      el.style.setProperty("--hue", hue);
       el.style.left = `${x - size / 2}px`;
       el.style.top = `${y - size / 2}px`;
       el.style.width = `${size}px`;
@@ -214,7 +237,7 @@
       el.setAttribute("aria-label", `${c.name}, ${c.commentCount} comentarios`);
       el.innerHTML = `
         <span class="count">${c.commentCount}</span>
-        <span class="dist">${c.inside ? "acá" : c.distanceKm + " km"}</span>
+        <span class="dist">${c.isCurrent ? "acá" : c.name}</span>
       `;
       el.addEventListener("click", () => openCommunity(c));
       fieldEl.appendChild(el);
@@ -228,7 +251,6 @@
       el.style.top = `${y - size / 2}px`;
       el.style.width = `${size}px`;
       el.style.height = `${size}px`;
-      el.style.opacity = String(0.55 + a.proximity * 0.45);
       el.style.animationDelay = `${(seed % 30) / 10}s`;
       el.setAttribute("aria-label", `Publicidad: ${a.title}`);
       el.innerHTML = `
@@ -243,29 +265,27 @@
 
   // ---- community panel + comments ---------------------------------------
 
-  function openCommunity(bubble) {
-    state.activeCommunityId = bubble.id;
+  function openCommunity(place) {
+    state.activePlaceId = place.id;
     state.renderedCommentIds = new Set();
     communityView.classList.remove("hidden");
     adView.classList.add("hidden");
     panelEl.classList.remove("hidden");
-    panelTitleEl.textContent = bubble.name;
-    panelSubtitle.textContent = `${bubble.ownerName} · ${bubble.inside ? "tu zona actual" : bubble.distanceKm + " km"}`;
+    panelTitleEl.textContent = place.name;
+    panelSubtitle.textContent = place.isCurrent ? "tu ubicación actual" : `a ${place.distanceKm} km de vos`;
     commentListEl.innerHTML = `<div class="empty-state">Cargando…</div>`;
-    // loadComments (fetch) and connectStream (SSE) race on purpose — whichever
-    // arrives first renders, appendComment dedupes by id so neither clobbers the other
-    loadComments(bubble.id);
-    connectStream(bubble.id);
+    loadComments(place.id);
+    connectStream(place.id);
   }
 
   function openAd(ad) {
-    state.activeCommunityId = null;
+    state.activePlaceId = null;
     if (state.eventSource) state.eventSource.close();
     communityView.classList.add("hidden");
     adView.classList.remove("hidden");
     panelEl.classList.remove("hidden");
     panelTitleEl.textContent = ad.title;
-    panelSubtitle.textContent = `${ad.ownerName} · ${ad.inside ? "cerca tuyo" : ad.distanceKm + " km"}`;
+    panelSubtitle.textContent = `${ad.ownerName} · publicidad en ${ad.targetName}`;
     adTextEl.textContent = ad.text;
     adOwnerEl.textContent = `Publicidad de ${ad.ownerName}`;
     if (ad.discountText) {
@@ -278,15 +298,14 @@
 
   closePanelBtn.addEventListener("click", () => {
     panelEl.classList.add("hidden");
-    state.activeCommunityId = null;
+    state.activePlaceId = null;
     if (state.eventSource) state.eventSource.close();
   });
 
-  async function loadComments(communityId) {
-    const res = await fetch(`/api/communities/${communityId}/comments`);
+  async function loadComments(placeId) {
+    const res = await fetch(`/api/places/${placeId}/comments`);
     const data = await res.json();
-    // the panel may have moved on to something else while this was in flight
-    if (state.activeCommunityId !== communityId) return;
+    if (state.activePlaceId !== placeId) return;
     data.comments.forEach(appendComment);
     if (!state.renderedCommentIds.size) {
       commentListEl.innerHTML = `<div class="empty-state">Todavía no hay comentarios acá. Contá qué está pasando.</div>`;
@@ -295,8 +314,6 @@
   }
 
   function appendComment(c) {
-    // dedupe: the initial fetch and the live SSE stream both race to
-    // render the same comment, whichever arrives first wins
     if (state.renderedCommentIds.has(c.id)) return;
     state.renderedCommentIds.add(c.id);
     commentListEl.querySelector(".empty-state")?.remove();
@@ -322,12 +339,12 @@
 
   // ---- realtime via Server-Sent Events -----------------------------------
 
-  function connectStream(communityId) {
+  function connectStream(placeId) {
     if (state.eventSource) state.eventSource.close();
-    const es = new EventSource(`/api/communities/${communityId}/stream`);
+    const es = new EventSource(`/api/places/${placeId}/stream`);
     es.onmessage = (event) => {
       const payload = JSON.parse(event.data);
-      if (payload.type === "comment" && state.activeCommunityId === communityId) {
+      if (payload.type === "comment" && state.activePlaceId === placeId) {
         appendComment(payload.comment);
         commentListEl.scrollTop = commentListEl.scrollHeight;
       }
@@ -340,12 +357,12 @@
   commentForm.addEventListener("submit", async (e) => {
     e.preventDefault();
     const text = commentInput.value.trim();
-    if (!text || !state.activeCommunityId) return;
+    if (!text || !state.activePlaceId) return;
 
     const submitBtn = commentForm.querySelector("button");
     submitBtn.disabled = true;
     try {
-      const res = await fetch(`/api/communities/${state.activeCommunityId}/comments`, {
+      const res = await fetch(`/api/places/${state.activePlaceId}/comments`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ anonId: state.anonId, text }),
