@@ -2,11 +2,17 @@
   const statusEl = document.getElementById("status");
   const fieldEl = document.getElementById("bubbleField");
   const panelEl = document.getElementById("panel");
+  const panelTitleEl = document.getElementById("panelTitle");
   const panelSubtitle = document.getElementById("panelSubtitle");
   const closePanelBtn = document.getElementById("closePanel");
+  const communityView = document.getElementById("communityView");
+  const adView = document.getElementById("adView");
   const commentListEl = document.getElementById("commentList");
   const commentForm = document.getElementById("commentForm");
   const commentInput = document.getElementById("commentInput");
+  const adTextEl = document.getElementById("adText");
+  const adDiscountEl = document.getElementById("adDiscount");
+  const adOwnerEl = document.getElementById("adOwner");
   const rotateBtn = document.getElementById("rotateIdentity");
   const myLabelEl = document.getElementById("myLabel");
 
@@ -16,7 +22,12 @@
     lastPos: null,
     activeCommunityId: null,
     eventSource: null,
+    renderedCommentIds: new Set(),
   };
+
+  window.CommunitiesApp = { getLastPos: () => state.lastPos, refreshBubbles: () => {
+    if (state.lastPos) loadBubbles(state.lastPos.lat, state.lastPos.lng);
+  } };
 
   // ---- anonymous identity -------------------------------------------
 
@@ -73,10 +84,10 @@
     }
   }
 
-  function onPositionError(err) {
+  function onPositionError() {
     statusEl.textContent = "No pudimos acceder a tu ubicación";
     renderEmptyState(
-      "Sin acceso a tu ubicación no podemos mostrarte tu comunidad. Habilitá el permiso e intentá de nuevo."
+      "Sin acceso a tu ubicación no podemos mostrarte lo que hay cerca. Habilitá el permiso e intentá de nuevo."
     );
   }
 
@@ -107,11 +118,13 @@
       const res = await fetch(`/api/bubbles?lat=${lat}&lng=${lng}`);
       if (!res.ok) throw new Error("bubbles fetch failed");
       const data = await res.json();
-      state.currentCommunityId = data.currentCommunityId;
-      renderBubbles(data.bubbles);
-      statusEl.textContent = `${data.bubbles.length} comunidad${data.bubbles.length === 1 ? "" : "es"} cerca tuyo`;
+      renderBubbles(data.communities, data.ads);
+      const total = data.communities.length + data.ads.length;
+      statusEl.textContent = total
+        ? `${data.communities.length} comunidad${data.communities.length === 1 ? "" : "es"} · ${data.ads.length} publicidad${data.ads.length === 1 ? "" : "es"} cerca`
+        : "Nada activado cerca tuyo todavía";
     } catch (e) {
-      statusEl.textContent = "No pudimos cargar las comunidades cercanas";
+      statusEl.textContent = "No pudimos cargar lo que hay cerca";
     }
   }
 
@@ -119,31 +132,111 @@
     fieldEl.innerHTML = `<div class="empty-state">${msg}</div>`;
   }
 
-  function renderBubbles(bubbles) {
+  // Bubbles never get placed under the topbar — its buttons sit above the
+  // field and would otherwise steal clicks from a bubble underneath.
+  const TOP_SAFE_PX = 118;
+
+  // Places bubbles on the field avoiding overlap: each bubble gets a
+  // seed-based starting spot, then nudges outward along a spiral until it
+  // clears every bubble already placed (or gives up after a few tries).
+  function placeNonOverlapping(items, placed, w, h) {
+    const GAP = 10;
+    items.forEach((item) => {
+      const r = item.size / 2;
+      let x = item.baseX;
+      let y = item.baseY;
+      let ok = false;
+      for (let attempt = 0; attempt < 24 && !ok; attempt++) {
+        if (attempt > 0) {
+          const angle = attempt * 2.4;
+          const spiral = attempt * 9;
+          x = item.baseX + Math.cos(angle) * spiral;
+          y = item.baseY + Math.sin(angle) * spiral;
+        }
+        x = Math.max(r + 6, Math.min(w - r - 6, x));
+        y = Math.max(TOP_SAFE_PX + r, Math.min(h - r - 16, y));
+        ok = placed.every((p) => Math.hypot(p.x - x, p.y - y) >= p.r + r + GAP);
+      }
+      placed.push({ x, y, r });
+      item.x = x;
+      item.y = y;
+    });
+  }
+
+  function renderBubbles(communities, ads) {
     fieldEl.innerHTML = "";
-    if (!bubbles.length) {
-      renderEmptyState("Todavía no hay comunidades activas cerca tuyo. ¡Sé el primero en comentar!");
+    if (!communities.length && !ads.length) {
+      renderEmptyState(
+        "Todavía no hay comunidades ni publicidad activadas cerca tuyo. Solo comercios y entidades pueden crear la primera — mirá \"Comercios y entidades\" arriba."
+      );
       return;
     }
 
-    bubbles.forEach((b) => {
-      const seed = hashSeed(b.geohash);
-      const x = 10 + (seed % 80);
-      const y = 15 + ((seed >> 8) % 65);
-      const size = Math.min(160, Math.max(70, 70 + b.commentCount * 6));
+    const w = fieldEl.clientWidth || 360;
+    const h = fieldEl.clientHeight || 560;
 
+    const communityItems = communities.map((c) => {
+      const seed = hashSeed(`c${c.id}`);
+      return {
+        c,
+        seed,
+        baseX: w * (0.15 + ((seed % 80) / 100)),
+        baseY: h * (0.15 + (((seed >> 8) % 60) / 100)),
+        size: Math.min(160, Math.max(72, 72 + c.commentCount * 6)),
+      };
+    });
+    const adItems = ads.map((a) => {
+      const seed = hashSeed(`a${a.id}`);
+      return {
+        a,
+        seed,
+        baseX: w * (0.15 + (((seed >> 3) % 80) / 100)),
+        baseY: h * (0.15 + (((seed >> 11) % 60) / 100)),
+        size: Math.round(58 + a.proximity * 60),
+      };
+    });
+
+    // communities are placed first so they claim their spot; ads (usually
+    // smaller and more numerous) fill in around them
+    const placed = [];
+    placeNonOverlapping(communityItems, placed, w, h);
+    placeNonOverlapping(adItems, placed, w, h);
+
+    communityItems.forEach(({ c, seed, size, x, y }) => {
       const el = document.createElement("button");
-      el.className = "bubble" + (b.isCurrent ? " current" : "");
-      el.style.left = `${x}%`;
-      el.style.top = `${y}%`;
+      el.className = "bubble" + (c.inside ? " current" : "");
+      el.style.setProperty("--hue", c.hue);
+      el.style.left = `${x - size / 2}px`;
+      el.style.top = `${y - size / 2}px`;
       el.style.width = `${size}px`;
       el.style.height = `${size}px`;
       el.style.animationDelay = `${(seed % 30) / 10}s`;
+      el.setAttribute("aria-label", `${c.name}, ${c.commentCount} comentarios`);
       el.innerHTML = `
-        <span class="count">${b.commentCount}</span>
-        <span class="dist">${b.isCurrent ? "acá" : b.distanceKm + " km"}</span>
+        <span class="count">${c.commentCount}</span>
+        <span class="dist">${c.inside ? "acá" : c.distanceKm + " km"}</span>
       `;
-      el.addEventListener("click", () => openCommunity(b));
+      el.addEventListener("click", () => openCommunity(c));
+      fieldEl.appendChild(el);
+    });
+
+    adItems.forEach(({ a, seed, size, x, y }) => {
+      const el = document.createElement("button");
+      el.className = "bubble ad";
+      el.style.setProperty("--hue", a.hue);
+      el.style.left = `${x - size / 2}px`;
+      el.style.top = `${y - size / 2}px`;
+      el.style.width = `${size}px`;
+      el.style.height = `${size}px`;
+      el.style.opacity = String(0.55 + a.proximity * 0.45);
+      el.style.animationDelay = `${(seed % 30) / 10}s`;
+      el.setAttribute("aria-label", `Publicidad: ${a.title}`);
+      el.innerHTML = `
+        <span class="ad-tag">Publicidad</span>
+        <span class="count" style="font-size:13px">${a.title}</span>
+        ${a.discountText ? `<span class="discount-badge">${escapeHtml(a.discountText)}</span>` : ""}
+      `;
+      el.addEventListener("click", () => openAd(a));
       fieldEl.appendChild(el);
     });
   }
@@ -152,12 +245,35 @@
 
   function openCommunity(bubble) {
     state.activeCommunityId = bubble.id;
+    state.renderedCommentIds = new Set();
+    communityView.classList.remove("hidden");
+    adView.classList.add("hidden");
     panelEl.classList.remove("hidden");
-    panelSubtitle.textContent = bubble.isCurrent
-      ? "Tu ubicación actual"
-      : `A ${bubble.distanceKm} km de vos`;
+    panelTitleEl.textContent = bubble.name;
+    panelSubtitle.textContent = `${bubble.ownerName} · ${bubble.inside ? "tu zona actual" : bubble.distanceKm + " km"}`;
+    commentListEl.innerHTML = `<div class="empty-state">Cargando…</div>`;
+    // loadComments (fetch) and connectStream (SSE) race on purpose — whichever
+    // arrives first renders, appendComment dedupes by id so neither clobbers the other
     loadComments(bubble.id);
     connectStream(bubble.id);
+  }
+
+  function openAd(ad) {
+    state.activeCommunityId = null;
+    if (state.eventSource) state.eventSource.close();
+    communityView.classList.add("hidden");
+    adView.classList.remove("hidden");
+    panelEl.classList.remove("hidden");
+    panelTitleEl.textContent = ad.title;
+    panelSubtitle.textContent = `${ad.ownerName} · ${ad.inside ? "cerca tuyo" : ad.distanceKm + " km"}`;
+    adTextEl.textContent = ad.text;
+    adOwnerEl.textContent = `Publicidad de ${ad.ownerName}`;
+    if (ad.discountText) {
+      adDiscountEl.textContent = ad.discountText;
+      adDiscountEl.classList.remove("hidden");
+    } else {
+      adDiscountEl.classList.add("hidden");
+    }
   }
 
   closePanelBtn.addEventListener("click", () => {
@@ -167,19 +283,24 @@
   });
 
   async function loadComments(communityId) {
-    commentListEl.innerHTML = `<div class="empty-state">Cargando…</div>`;
     const res = await fetch(`/api/communities/${communityId}/comments`);
     const data = await res.json();
-    commentListEl.innerHTML = "";
-    if (!data.comments.length) {
-      commentListEl.innerHTML = `<div class="empty-state">Todavía no hay comentarios acá. Contá qué está pasando.</div>`;
-      return;
-    }
+    // the panel may have moved on to something else while this was in flight
+    if (state.activeCommunityId !== communityId) return;
     data.comments.forEach(appendComment);
+    if (!state.renderedCommentIds.size) {
+      commentListEl.innerHTML = `<div class="empty-state">Todavía no hay comentarios acá. Contá qué está pasando.</div>`;
+    }
     commentListEl.scrollTop = commentListEl.scrollHeight;
   }
 
   function appendComment(c) {
+    // dedupe: the initial fetch and the live SSE stream both race to
+    // render the same comment, whichever arrives first wins
+    if (state.renderedCommentIds.has(c.id)) return;
+    state.renderedCommentIds.add(c.id);
+    commentListEl.querySelector(".empty-state")?.remove();
+
     const div = document.createElement("div");
     div.className = "comment";
     const time = new Date(c.created_at).toLocaleTimeString("es-AR", {

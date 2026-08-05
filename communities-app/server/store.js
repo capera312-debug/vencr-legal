@@ -9,9 +9,20 @@ function emptyState() {
   return {
     nextCommunityId: 1,
     nextCommentId: 1,
-    communities: [], // { id, geohash, lat, lng, createdAt }
+    nextEntityId: 1,
+    nextAdId: 1,
+
+    // anonymous individuals — never linked to a real identity
     identities: {}, // anonId -> { label, createdAt }
     comments: [], // { id, communityId, anonId, label, body, createdAt }
+
+    // commercial / public-entity accounts — the only accounts that can
+    // found a community or launch advertising
+    entities: [], // { id, businessName, category, email, salt, hash, createdAt }
+    sessions: {}, // token -> { entityId, createdAt }
+
+    communities: [], // { id, name, description, ownerEntityId, ownerName, hue, lat, lng, radiusKm, createdAt }
+    ads: [], // { id, title, text, discountText, ownerEntityId, ownerName, hue, lat, lng, radiusKm, createdAt, expiresAt }
   };
 }
 

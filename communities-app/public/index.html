@@ -11,32 +11,154 @@
 
   <header class="topbar">
     <div class="brand">Communities</div>
-    <div id="status" class="status">Buscando tu ubicación…</div>
+    <div class="topbar-actions">
+      <div id="status" class="status">Buscando tu ubicación…</div>
+      <button id="openBusiness" class="chip-btn" type="button">🏢 Comercios y entidades</button>
+      <button id="rotateIdentity" class="chip-btn" title="Volver a empezar como perfil incógnito nuevo" type="button">🔄 Nuevo perfil incógnito</button>
+    </div>
   </header>
 
-  <main id="bubbleField" class="bubble-field" aria-label="Comunidades cercanas"></main>
+  <main id="bubbleField" class="bubble-field" aria-label="Comunidades y publicidad cercanas"></main>
 
   <section id="panel" class="panel hidden">
     <div class="panel-header">
       <div>
-        <div class="panel-title">Comunidad actual</div>
+        <div id="panelTitle" class="panel-title">Comunidad actual</div>
         <div id="panelSubtitle" class="panel-subtitle"></div>
       </div>
       <button id="closePanel" class="icon-btn" aria-label="Cerrar">✕</button>
     </div>
 
-    <div id="commentList" class="comment-list"></div>
+    <div id="communityView" class="panel-body">
+      <div id="commentList" class="comment-list"></div>
+      <form id="commentForm" class="comment-form">
+        <span id="myLabel" class="my-label"></span>
+        <input id="commentInput" type="text" maxlength="280" placeholder="Comentá algo sobre este lugar…" autocomplete="off" />
+        <button type="submit">Enviar</button>
+      </form>
+    </div>
 
-    <form id="commentForm" class="comment-form">
-      <span id="myLabel" class="my-label"></span>
-      <input id="commentInput" type="text" maxlength="280" placeholder="Comentá algo sobre este lugar…" autocomplete="off" />
-      <button type="submit">Enviar</button>
-    </form>
+    <div id="adView" class="panel-body ad-view hidden">
+      <div class="ad-disclosure">Publicidad</div>
+      <p id="adText" class="ad-text"></p>
+      <div id="adDiscount" class="ad-discount hidden"></div>
+      <div id="adOwner" class="ad-owner"></div>
+    </div>
   </section>
 
-  <button id="rotateIdentity" class="rotate-btn" title="Volver a empezar como perfil incógnito nuevo">🔄 Nuevo perfil incógnito</button>
+  <!-- ---- business / entity portal ---- -->
+  <div id="businessOverlay" class="overlay hidden">
+    <div class="business-modal">
+      <div class="business-header">
+        <div class="business-title">Portal de comercios y entidades</div>
+        <button id="closeBusiness" class="icon-btn" aria-label="Cerrar">✕</button>
+      </div>
+
+      <p class="business-note">Solo cuentas de comercios o entidades públicas pueden crear comunidades o publicidad. Las personas siguen comentando de forma anónima dentro de las comunidades ya creadas.</p>
+
+      <div id="authTabs" class="auth-tabs">
+        <button type="button" class="auth-tab active" data-tab="login">Iniciar sesión</button>
+        <button type="button" class="auth-tab" data-tab="register">Registrarme</button>
+      </div>
+
+      <form id="loginForm" class="auth-form">
+        <label>Email institucional
+          <input type="email" id="loginEmail" required autocomplete="username" />
+        </label>
+        <label>Contraseña
+          <input type="password" id="loginPassword" required autocomplete="current-password" />
+        </label>
+        <div id="loginError" class="form-error"></div>
+        <button type="submit">Iniciar sesión</button>
+      </form>
+
+      <form id="registerForm" class="auth-form hidden">
+        <label>Nombre del comercio o entidad
+          <input type="text" id="regName" maxlength="80" required />
+        </label>
+        <label>Categoría
+          <select id="regCategory"></select>
+        </label>
+        <label>Email institucional
+          <input type="email" id="regEmail" placeholder="contacto@tuempresa.com" required autocomplete="username" />
+        </label>
+        <label>Contraseña
+          <input type="password" id="regPassword" minlength="8" required autocomplete="new-password" />
+        </label>
+        <div id="registerError" class="form-error"></div>
+        <button type="submit">Crear cuenta</button>
+      </form>
+
+      <div id="dashboard" class="dashboard hidden">
+        <div class="dashboard-who">
+          <div>
+            <div id="dashName" class="dashboard-name"></div>
+            <div id="dashCategory" class="dashboard-category"></div>
+          </div>
+          <button id="logoutBtn" class="text-btn" type="button">Cerrar sesión</button>
+        </div>
+
+        <div class="dashboard-actions">
+          <button id="showCreateCommunity" class="secondary-btn" type="button">+ Crear comunidad acá</button>
+          <button id="showCreateAd" class="secondary-btn" type="button">+ Lanzar publicidad acá</button>
+        </div>
+
+        <form id="createCommunityForm" class="create-form hidden">
+          <label>Nombre de la comunidad
+            <input type="text" id="communityName" maxlength="60" required />
+          </label>
+          <label>Descripción breve
+            <input type="text" id="communityDescription" maxlength="200" />
+          </label>
+          <label>Radio de alcance: <span id="communityRadiusLabel">1.2 km</span>
+            <input type="range" id="communityRadius" min="0.2" max="5" step="0.1" value="1.2" />
+          </label>
+          <div id="communityError" class="form-error"></div>
+          <div class="create-form-actions">
+            <button type="button" class="text-btn" id="cancelCreateCommunity">Cancelar</button>
+            <button type="submit">Crear comunidad</button>
+          </div>
+        </form>
+
+        <form id="createAdForm" class="create-form hidden">
+          <label>Título
+            <input type="text" id="adTitle" maxlength="60" required />
+          </label>
+          <label>Texto del anuncio
+            <input type="text" id="adTextInput" maxlength="200" required />
+          </label>
+          <label>Descuento (opcional)
+            <input type="text" id="adDiscountInput" maxlength="60" placeholder="ej: 20% off mostrando esto" />
+          </label>
+          <label>Radio de alcance: <span id="adRadiusLabel">1 km</span>
+            <input type="range" id="adRadius" min="0.2" max="5" step="0.1" value="1" />
+          </label>
+          <label>Duración: <span id="adDurationLabel">7 días</span>
+            <input type="range" id="adDuration" min="1" max="720" step="1" value="168" />
+          </label>
+          <div id="adError" class="form-error"></div>
+          <div class="create-form-actions">
+            <button type="button" class="text-btn" id="cancelCreateAd">Cancelar</button>
+            <button type="submit">Lanzar publicidad</button>
+          </div>
+        </form>
+
+        <div class="dashboard-lists">
+          <div>
+            <div class="dashboard-list-title">Tus comunidades</div>
+            <div id="myCommunities" class="owned-list"></div>
+          </div>
+          <div>
+            <div class="dashboard-list-title">Tu publicidad</div>
+            <div id="myAds" class="owned-list"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
 
 </div>
 <script src="app.js"></script>
+<script src="business.js"></script>
 </body>
 </html>
