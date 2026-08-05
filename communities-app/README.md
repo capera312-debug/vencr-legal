@@ -64,20 +64,29 @@ Al lanzar un anuncio, el comercio elige un nivel según su ubicación actual —
 
 Un usuario ve un anuncio si su ubicación actual resuelta cae dentro del nivel targeteado — estar en "PH Torres de Alba" te muestra un anuncio targeteado a "San Francisco" (el corregimiento), aunque el anunciante nunca haya estado específicamente en ese PH.
 
+## Moderación y prevención de abuso
+
+Es la parte más delicada del concepto (anonimato + ubicación), así que tiene varias capas — todas en `server/moderation.js` e `server/index.js`:
+
+- **Reportar.** Cualquiera puede reportar un comentario o un anuncio (🚩 en la UI), sin cuenta. Un mismo `anonId` no puede reportar dos veces lo mismo (409 si lo intenta).
+- **Auto-ocultamiento por umbral.** Al llegar a 3 reportes de `anonId` distintos, el comentario o anuncio se oculta al instante — desaparece de los listados y de `/api/bubbles`. **Esto es deliberadamente tosco:** no hay revisión humana en el medio, lo que significa que es *gameable* — varios perfiles incógnitos coordinados (aunque sea rotando de a uno) pueden ocultar contenido legítimo a fuerza de reportes falsos ("review-bombing"). Sirve para demostrar el mecanismo, no reemplaza una cola de moderación humana real.
+- **Filtro de contenido.** Una lista corta e ilustrativa de patrones prohibidos (`BANNED_PATTERNS` en `moderation.js`) rechaza el posteo antes de guardarlo, con mensaje claro. Es un punto de partida, no una lista seria — antes de producción esto necesita un servicio de moderación real o una lista mantenida profesionalmente.
+- **Bloqueo de identidad reincidente.** Una identidad anónima cuyos comentarios se ocultaron 5 veces por reportes queda bloqueada para seguir posteando. Límite honesto: como cualquier sistema anónimo por diseño, rotar a un perfil incógnito nuevo esquiva el bloqueo — es el costo inherente de que comentar no requiera cuenta.
+- **Rate limiting en tres capas:** cooldown de 4s por identidad, cooldown de 3s por IP (frena a quien rota de identidad justamente para saltarse el límite por identidad), y un tope de 20 comentarios por hora por identidad. Todo en memoria — no sobrevive un restart ni escala a más de una instancia (ver "Próximos pasos").
+
 ## Decisiones de privacidad
 
 - **Nunca se guarda la lat/lng exacta de un individuo comentando.** Solo se guarda a qué lugar catalogado (o celda sintética) pertenece cada comentario.
 - **Comentar no requiere cuenta.** El único identificador es un UUID aleatorio del lado del cliente, sin vínculo a una persona real, con alias rotable en cualquier momento.
 - **Las cuentas de entidad sí son identificables** (tienen email, nombre de comercio) — es la contracara necesaria de poder pagar por publicidad; no son anónimas ni deberían serlo.
 - **Los comentarios y textos de anuncios se sanitizan** (se remueven tags HTML) antes de guardarse y se listan escapados en el cliente, para evitar XSS.
-- **Rate limiting básico** (4s entre comentarios por `anonId`) para frenar spam sin necesitar cuentas.
 - **Toda burbuja de publicidad se etiqueta como "Publicidad"** de forma visible, tanto en el mapa como en el panel — divulgación de contenido pago, no opcional. Las tiendas de apps (Apple/Google) lo exigen explícitamente para contenido patrocinado.
 
 ## Verificación de comercios/entidades — y sus límites
 
 El registro exige un email que **no** sea de un proveedor gratuito genérico (gmail, hotmail, outlook, yahoo, icloud, etc. — lista en `server/auth.js`). Esto es una heurística barata para levantar la vara, **no** verificación real de identidad comercial (no confirma CUIT/RUC, dirección física, ni que quien se registra tenga derecho a representar a esa organización). Antes de producción real hace falta algo más serio: verificación del dominio (enviar un email de confirmación), o directamente aprobación manual de cada cuenta nueva.
 
-Cosas que **todavía no** están resueltas y conviene decidir antes de producción: moderación de contenido dentro de las comunidades (denunciar/ocultar comentarios), expiración automática de comentarios viejos, verificación real de comercios (más allá del dominio de email), límites de abuso más robustos (el rate-limit hoy es en memoria, no sobrevive un restart ni escala a más de una instancia), y Términos de Servicio específicos que cubran tanto a comercios (qué pueden publicar y a qué nivel) como a individuos (qué pueden comentar).
+Cosas que **todavía no** están resueltas y conviene decidir antes de producción: una cola de moderación con revisión humana (hoy el ocultamiento es automático y gameable, ver arriba), una lista de contenido prohibido seria en vez de la ilustrativa actual, expiración automática de comentarios viejos, verificación real de comercios (más allá del dominio de email), y Términos de Servicio específicos que cubran tanto a comercios (qué pueden publicar y a qué nivel) como a individuos (qué pueden comentar y qué pasa si se los reporta).
 
 ## Cómo correrlo
 
@@ -94,8 +103,8 @@ Abrí `http://localhost:3000` en el navegador (el permiso de geolocalización so
 ## Próximos pasos sugeridos
 
 - Reemplazar el catálogo hardcodeado por una consulta real de geocodificación inversa (Nominatim propio, o un proveedor pago) apenas haya acceso de red — es el paso número uno para salir de "demo" a "real".
+- Cola de moderación con revisión humana en vez de auto-ocultamiento puro por umbral de reportes (el riesgo de review-bombing documentado arriba es real).
 - Mapa real de fondo (Mapbox/Leaflet) en vez de burbujas flotando libremente.
 - Expiración de comentarios (ej. desaparecen a las 24-48h) para que la comunidad refleje "ahora", no un historial acumulado.
-- Moderación de comentarios y de anuncios (reportar, ocultar, filtro de palabras) antes de abrir a usuarios reales.
 - Verificación real de comercios/entidades (confirmación de dominio, documentación, o aprobación manual) en vez de solo el filtro de email genérico.
-- Reemplazar el archivo JSON por una base de datos real (Postgres, SQLite) y mover el rate-limiting y las suscripciones a algo compartido (Redis) si se escala a más de una instancia del servidor.
+- Reemplazar el archivo JSON por una base de datos real (Postgres, SQLite) y mover el rate-limiting, los reportes y las suscripciones a algo compartido (Redis) si se escala a más de una instancia del servidor.

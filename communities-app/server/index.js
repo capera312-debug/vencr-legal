@@ -19,6 +19,11 @@ const {
   targetOptionsFor,
   adMatchesLocation,
 } = require("./places");
+const {
+  containsBannedContent,
+  REPORT_HIDE_THRESHOLD,
+  IDENTITY_BLOCK_THRESHOLD,
+} = require("./moderation");
 
 const PUBLIC_DIR = path.join(__dirname, "..", "public");
 const PORT = process.env.PORT || 3000;
@@ -67,16 +72,95 @@ function ensureIdentity(anonId) {
 }
 
 function placeStats(placeId) {
-  const comments = state.comments.filter((c) => c.placeId === placeId);
+  const comments = state.comments.filter((c) => c.placeId === placeId && !c.hiddenAt);
   return {
     count: comments.length,
     lastActiveAt: comments.length ? comments[comments.length - 1].createdAt : null,
   };
 }
 
-// naive per-identity cooldown to deter spam; fine for a single-process prototype
-const lastPostAt = new Map();
+function getClientIp(req) {
+  // no reverse proxy in front of this prototype, so the socket address is
+  // trustworthy enough here — behind a real proxy this would need
+  // X-Forwarded-For handled carefully (spoofable unless the proxy is trusted)
+  return req.socket.remoteAddress || "unknown";
+}
+
+// Rate limiting has two independent layers:
+//  - a per-identity cooldown + rolling hourly cap (the normal case)
+//  - a per-IP cooldown as a backstop against someone rotating to a fresh
+//    incognito profile purely to dodge the per-identity limit
+// All in-memory: fine for a single-process prototype, won't survive a
+// restart or scale past one instance — see README.
+const lastPostAt = new Map(); // anonId -> timestamp
+const lastPostAtByIp = new Map(); // ip -> timestamp
+const postTimestampsByIdentity = new Map(); // anonId -> timestamp[]
 const COOLDOWN_MS = 4000;
+const IP_COOLDOWN_MS = 3000;
+const HOURLY_LIMIT = 20;
+
+function checkRateLimit(anonId, ip) {
+  const now = Date.now();
+  if (now - (lastPostAt.get(anonId) || 0) < COOLDOWN_MS) {
+    return "espera unos segundos antes de comentar de nuevo";
+  }
+  if (now - (lastPostAtByIp.get(ip) || 0) < IP_COOLDOWN_MS) {
+    return "espera unos segundos antes de comentar de nuevo";
+  }
+  const recent = (postTimestampsByIdentity.get(anonId) || []).filter((t) => now - t < 3600_000);
+  if (recent.length >= HOURLY_LIMIT) {
+    return "llegaste al límite de comentarios por hora para este perfil — probá de nuevo más tarde";
+  }
+  lastPostAt.set(anonId, now);
+  lastPostAtByIp.set(ip, now);
+  recent.push(now);
+  postTimestampsByIdentity.set(anonId, recent);
+  return null;
+}
+
+// A distinct-reporter count on a comment/ad that crosses the threshold
+// hides it immediately, no human in the loop — see README for why that's
+// a blunt, gameable instrument and what real moderation needs instead.
+function registerReport(targetType, targetId, anonId, reason) {
+  const already = state.reports.some((r) => r.targetType === targetType && r.targetId === targetId && r.anonId === anonId);
+  if (already) return { alreadyReported: true, hidden: false };
+
+  state.reports.push({
+    id: state.nextReportId++,
+    targetType,
+    targetId,
+    anonId,
+    reason: sanitizeText(reason, 120) || "sin especificar",
+    createdAt: Date.now(),
+  });
+
+  const reportCount = state.reports.filter((r) => r.targetType === targetType && r.targetId === targetId).length;
+  let justHidden = false;
+
+  if (reportCount >= REPORT_HIDE_THRESHOLD) {
+    if (targetType === "comment") {
+      const comment = state.comments.find((c) => c.id === targetId);
+      if (comment && !comment.hiddenAt) {
+        comment.hiddenAt = Date.now();
+        justHidden = true;
+        const authorIdentity = state.identities[comment.anonId];
+        if (authorIdentity) {
+          authorIdentity.hiddenCount = (authorIdentity.hiddenCount || 0) + 1;
+          if (authorIdentity.hiddenCount >= IDENTITY_BLOCK_THRESHOLD) authorIdentity.blocked = true;
+        }
+      }
+    } else if (targetType === "ad") {
+      const ad = state.ads.find((a) => a.id === targetId);
+      if (ad && !ad.hiddenAt) {
+        ad.hiddenAt = Date.now();
+        justHidden = true;
+      }
+    }
+  }
+
+  save();
+  return { alreadyReported: false, hidden: justHidden };
+}
 
 // ---- SSE subscribers (per-place comment streams) ---------------------------
 
@@ -252,17 +336,17 @@ async function handleApi(req, res, url) {
 
   // ---- places: comments (anonymous, open to anyone) --------------------------
 
-  if (req.method === "GET" && parts[1] === "places" && parts[3] === "comments") {
+  if (req.method === "GET" && parts[1] === "places" && parts[3] === "comments" && parts.length === 4) {
     const placeId = decodeURIComponent(parts[2] || "");
     if (!PLACE_ID_RE.test(placeId)) return sendJson(res, 400, { error: "lugar inválido" });
     const comments = state.comments
-      .filter((c) => c.placeId === placeId)
+      .filter((c) => c.placeId === placeId && !c.hiddenAt)
       .slice(-100)
       .map(({ id, label, body, createdAt }) => ({ id, label, body, created_at: createdAt }));
     return sendJson(res, 200, { placeId, comments });
   }
 
-  if (req.method === "POST" && parts[1] === "places" && parts[3] === "comments") {
+  if (req.method === "POST" && parts[1] === "places" && parts[3] === "comments" && parts.length === 4) {
     const placeId = decodeURIComponent(parts[2] || "");
     if (!PLACE_ID_RE.test(placeId)) return sendJson(res, 400, { error: "lugar inválido" });
 
@@ -278,15 +362,30 @@ async function handleApi(req, res, url) {
     if (!anonId || anonId.length > 64) return sendJson(res, 400, { error: "anonId inválido" });
     if (!text) return sendJson(res, 400, { error: "el comentario está vacío" });
 
-    const now = Date.now();
-    const last = lastPostAt.get(anonId) || 0;
-    if (now - last < COOLDOWN_MS) {
-      return sendJson(res, 429, { error: "espera unos segundos antes de comentar de nuevo" });
-    }
-    lastPostAt.set(anonId, now);
-
     const identity = ensureIdentity(anonId);
-    const comment = { id: state.nextCommentId++, placeId, anonId, label: identity.label, body: text, createdAt: now };
+    if (identity.blocked) {
+      return sendJson(res, 403, {
+        error: "este perfil incógnito fue bloqueado por reportes repetidos — podés empezar de nuevo con uno nuevo",
+      });
+    }
+
+    if (containsBannedContent(text)) {
+      return sendJson(res, 400, { error: "tu comentario contiene contenido no permitido" });
+    }
+
+    const rateError = checkRateLimit(anonId, getClientIp(req));
+    if (rateError) return sendJson(res, 429, { error: rateError });
+
+    const now = Date.now();
+    const comment = {
+      id: state.nextCommentId++,
+      placeId,
+      anonId,
+      label: identity.label,
+      body: text,
+      createdAt: now,
+      hiddenAt: null,
+    };
     state.comments.push(comment);
     save();
 
@@ -294,6 +393,29 @@ async function handleApi(req, res, url) {
     broadcastToPlace(placeId, { type: "comment", comment: outComment });
 
     return sendJson(res, 201, { comment: outComment });
+  }
+
+  // POST /api/places/:placeId/comments/:commentId/report — anonymous report
+  if (req.method === "POST" && parts[1] === "places" && parts[3] === "comments" && parts[5] === "report") {
+    const placeId = decodeURIComponent(parts[2] || "");
+    const commentId = Number(parts[4]);
+    if (!PLACE_ID_RE.test(placeId) || Number.isNaN(commentId)) return sendJson(res, 400, { error: "solicitud inválida" });
+
+    let body;
+    try {
+      body = await readJsonBody(req);
+    } catch {
+      return sendJson(res, 400, { error: "cuerpo inválido" });
+    }
+    const anonId = String(body.anonId || "");
+    if (!anonId || anonId.length > 64) return sendJson(res, 400, { error: "anonId inválido" });
+
+    const comment = state.comments.find((c) => c.id === commentId && c.placeId === placeId);
+    if (!comment) return sendJson(res, 404, { error: "comentario no encontrado" });
+
+    const result = registerReport("comment", commentId, anonId, body.reason);
+    if (result.alreadyReported) return sendJson(res, 409, { error: "ya reportaste este comentario" });
+    return sendJson(res, 200, { ok: true, hidden: result.hidden });
   }
 
   if (req.method === "GET" && parts[1] === "places" && parts[3] === "stream") {
@@ -340,6 +462,9 @@ async function handleApi(req, res, url) {
     if (!title) return sendJson(res, 400, { error: "falta el título" });
     if (!text) return sendJson(res, 400, { error: "falta el texto del anuncio" });
     if (Number.isNaN(lat) || Number.isNaN(lng)) return sendJson(res, 400, { error: "ubicación inválida" });
+    if (containsBannedContent(title) || containsBannedContent(text) || containsBannedContent(discountText || "")) {
+      return sendJson(res, 400, { error: "el anuncio contiene contenido no permitido" });
+    }
 
     // you can only target a level of the hierarchy your current location is
     // actually part of — no picking an arbitrary corregimiento you're not in
@@ -365,13 +490,14 @@ async function handleApi(req, res, url) {
       hue: hueForCategory(entity.category),
       createdAt: now,
       expiresAt: now + durationHours * 3600 * 1000,
+      hiddenAt: null,
     };
     state.ads.push(ad);
     save();
     return sendJson(res, 201, { ad });
   }
 
-  if (req.method === "DELETE" && parts[1] === "ads" && parts[2]) {
+  if (req.method === "DELETE" && parts[1] === "ads" && parts[2] && parts.length === 3) {
     const entity = entityFromRequest(req);
     if (!entity) return sendJson(res, 401, { error: "sesión inválida" });
     const id = Number(parts[2]);
@@ -381,6 +507,28 @@ async function handleApi(req, res, url) {
     state.ads = state.ads.filter((a) => a.id !== id);
     save();
     return sendJson(res, 200, { ok: true });
+  }
+
+  // POST /api/ads/:id/report — anonymous report
+  if (req.method === "POST" && parts[1] === "ads" && parts[2] && parts[3] === "report") {
+    const id = Number(parts[2]);
+    if (Number.isNaN(id)) return sendJson(res, 400, { error: "solicitud inválida" });
+
+    let body;
+    try {
+      body = await readJsonBody(req);
+    } catch {
+      return sendJson(res, 400, { error: "cuerpo inválido" });
+    }
+    const anonId = String(body.anonId || "");
+    if (!anonId || anonId.length > 64) return sendJson(res, 400, { error: "anonId inválido" });
+
+    const ad = state.ads.find((a) => a.id === id);
+    if (!ad) return sendJson(res, 404, { error: "anuncio no encontrado" });
+
+    const result = registerReport("ad", id, anonId, body.reason);
+    if (result.alreadyReported) return sendJson(res, 409, { error: "ya reportaste este anuncio" });
+    return sendJson(res, 200, { ok: true, hidden: result.hidden });
   }
 
   // ---- bubbles: what a viewer at (lat,lng) currently sees --------------------
@@ -424,7 +572,7 @@ async function handleApi(req, res, url) {
 
     const now = Date.now();
     const ads = state.ads
-      .filter((a) => a.expiresAt > now)
+      .filter((a) => a.expiresAt > now && !a.hiddenAt)
       .filter((a) => adMatchesLocation(a, location))
       .map((a) => ({
         id: a.id,

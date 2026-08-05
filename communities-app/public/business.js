@@ -271,7 +271,12 @@
 
   function renderOwned(ads) {
     myAdsEl.innerHTML = ads.length
-      ? ads.map((a) => ownedRow(a.id, a.title, `${LEVEL_LABEL[a.targetLevel] || a.targetLevel} · ${a.targetName} · hasta ${new Date(a.expiresAt).toLocaleDateString("es-AR")}`)).join("")
+      ? ads
+          .map((a) => {
+            const meta = `${LEVEL_LABEL[a.targetLevel] || a.targetLevel} · ${a.targetName} · hasta ${new Date(a.expiresAt).toLocaleDateString("es-AR")}`;
+            return ownedRow(a.id, a.title, a.hiddenAt ? `${meta} · 🚩 oculto por reportes` : meta);
+          })
+          .join("")
       : `<div class="owned-empty">Todavía no lanzaste publicidad.</div>`;
 
     myAdsEl.querySelectorAll("button[data-delete]").forEach((btn) => {

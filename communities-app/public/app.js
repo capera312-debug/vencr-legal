@@ -14,6 +14,7 @@
   const adTextEl = document.getElementById("adText");
   const adDiscountEl = document.getElementById("adDiscount");
   const adOwnerEl = document.getElementById("adOwner");
+  const reportAdBtn = document.getElementById("reportAdBtn");
   const rotateBtn = document.getElementById("rotateIdentity");
   const myLabelEl = document.getElementById("myLabel");
 
@@ -33,8 +34,10 @@
     label: null,
     lastPos: null,
     activePlaceId: null,
+    activeAdId: null,
     eventSource: null,
     renderedCommentIds: new Set(),
+    reportedIds: new Set(), // "comment:5" / "ad:3" — reported this session, don't let the button be clicked again
   };
 
   window.CommunitiesApp = {
@@ -267,6 +270,7 @@
 
   function openCommunity(place) {
     state.activePlaceId = place.id;
+    state.activeAdId = null;
     state.renderedCommentIds = new Set();
     communityView.classList.remove("hidden");
     adView.classList.add("hidden");
@@ -280,6 +284,7 @@
 
   function openAd(ad) {
     state.activePlaceId = null;
+    state.activeAdId = ad.id;
     if (state.eventSource) state.eventSource.close();
     communityView.classList.add("hidden");
     adView.classList.remove("hidden");
@@ -294,12 +299,48 @@
     } else {
       adDiscountEl.classList.add("hidden");
     }
+    const alreadyReported = state.reportedIds.has(`ad:${ad.id}`);
+    reportAdBtn.disabled = alreadyReported;
+    reportAdBtn.textContent = alreadyReported ? "🚩 Reportado" : "🚩 Reportar";
   }
 
   closePanelBtn.addEventListener("click", () => {
     panelEl.classList.add("hidden");
     state.activePlaceId = null;
+    state.activeAdId = null;
     if (state.eventSource) state.eventSource.close();
+  });
+
+  reportAdBtn.addEventListener("click", async () => {
+    if (!state.activeAdId) return;
+    reportAdBtn.disabled = true;
+    try {
+      const res = await fetch(`/api/ads/${state.activeAdId}/report`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ anonId: state.anonId, reason: "reportado desde la app" }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        state.reportedIds.add(`ad:${state.activeAdId}`);
+        reportAdBtn.textContent = "🚩 Reportado";
+        if (data.hidden) {
+          statusEl.textContent = "Gracias — esa publicidad se ocultó por reportes";
+          closePanelBtn.click();
+          if (window.CommunitiesApp) window.CommunitiesApp.refreshBubbles();
+        } else {
+          statusEl.textContent = "Gracias, lo reportamos";
+        }
+      } else if (res.status === 409) {
+        state.reportedIds.add(`ad:${state.activeAdId}`);
+        reportAdBtn.textContent = "🚩 Reportado";
+      } else {
+        reportAdBtn.disabled = false;
+        statusEl.textContent = data.error || "No se pudo reportar";
+      }
+    } catch {
+      reportAdBtn.disabled = false;
+    }
   });
 
   async function loadComments(placeId) {
@@ -318,18 +359,57 @@
     state.renderedCommentIds.add(c.id);
     commentListEl.querySelector(".empty-state")?.remove();
 
+    const alreadyReported = state.reportedIds.has(`comment:${c.id}`);
     const div = document.createElement("div");
     div.className = "comment";
+    div.dataset.commentId = c.id;
     const time = new Date(c.created_at).toLocaleTimeString("es-AR", {
       hour: "2-digit",
       minute: "2-digit",
     });
     div.innerHTML = `
-      <div class="meta"><span class="label">${escapeHtml(c.label)}</span><span>${time}</span></div>
+      <div class="meta">
+        <span class="label">${escapeHtml(c.label)}</span>
+        <span class="meta-right">
+          <span>${time}</span>
+          <button type="button" class="report-btn" data-report-comment="${c.id}" ${alreadyReported ? "disabled" : ""} title="Reportar">🚩</button>
+        </span>
+      </div>
       <div class="body">${escapeHtml(c.body)}</div>
     `;
     commentListEl.appendChild(div);
   }
+
+  commentListEl.addEventListener("click", async (e) => {
+    const btn = e.target.closest("[data-report-comment]");
+    if (!btn || btn.disabled) return;
+    const commentId = Number(btn.dataset.reportComment);
+    btn.disabled = true;
+    try {
+      const res = await fetch(`/api/places/${state.activePlaceId}/comments/${commentId}/report`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ anonId: state.anonId, reason: "reportado desde la app" }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        state.reportedIds.add(`comment:${commentId}`);
+        if (data.hidden) {
+          btn.closest(".comment")?.remove();
+          statusEl.textContent = "Gracias — ese comentario se ocultó por reportes";
+        } else {
+          statusEl.textContent = "Gracias, lo reportamos";
+        }
+      } else if (res.status === 409) {
+        state.reportedIds.add(`comment:${commentId}`);
+      } else {
+        btn.disabled = false;
+        statusEl.textContent = data.error || "No se pudo reportar";
+      }
+    } catch {
+      btn.disabled = false;
+    }
+  });
 
   function escapeHtml(str) {
     const div = document.createElement("div");

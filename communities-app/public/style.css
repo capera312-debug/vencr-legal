@@ -297,9 +297,42 @@ html, body {
   font-size: 14px;
 }
 
+.ad-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
 .ad-owner {
   color: var(--text-dim);
   font-size: 12px;
+}
+
+.report-btn {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 11px;
+  cursor: pointer;
+  flex: none;
+}
+
+.report-btn:hover {
+  color: #ff8a8a;
+  border-color: #ff8a8a;
+}
+
+.report-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.comment .meta .report-btn {
+  padding: 1px 8px;
+  font-size: 10px;
 }
 
 .ad-discount.hidden {
@@ -315,9 +348,16 @@ html, body {
 .comment .meta {
   display: flex;
   justify-content: space-between;
+  align-items: center;
   font-size: 11px;
   color: var(--text-dim);
   margin-bottom: 4px;
+}
+
+.comment .meta-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .comment .label {
