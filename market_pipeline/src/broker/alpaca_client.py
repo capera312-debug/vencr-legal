@@ -28,6 +28,20 @@ class AlpacaBroker:
         self._client = TradingClient(api_key, secret_key, paper=paper)
         self.paper = paper
 
+    def list_positions(self) -> list[dict]:
+        """Posiciones abiertas, en un formato plano listo para mostrar en un dashboard."""
+        return [
+            {
+                "symbol": p.symbol,
+                "qty": float(p.qty),
+                "market_value": float(p.market_value),
+                "unrealized_pl": float(p.unrealized_pl),
+                "unrealized_plpc": float(p.unrealized_plpc),
+                "current_price": float(p.current_price),
+            }
+            for p in self._client.get_all_positions()
+        ]
+
     def get_portfolio_state(self, trades_today: int) -> PortfolioState:
         account = self._client.get_account()
         positions = self._client.get_all_positions()

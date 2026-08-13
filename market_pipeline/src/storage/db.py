@@ -84,7 +84,7 @@ class AuditLog:
     def recent(self, limit: int = 20) -> list[dict]:
         with self._connect() as conn:
             rows = conn.execute(
-                "SELECT created_at, symbol, thesis_json, risk_decision_json, order_json"
+                "SELECT created_at, symbol, thesis_json, portfolio_json, risk_decision_json, order_json"
                 " FROM decisions ORDER BY id DESC LIMIT ?",
                 (limit,),
             ).fetchall()
@@ -93,8 +93,9 @@ class AuditLog:
                 "created_at": r[0],
                 "symbol": r[1],
                 "thesis": json.loads(r[2]),
-                "risk_decision": json.loads(r[3]),
-                "order": json.loads(r[4]) if r[4] else None,
+                "portfolio": json.loads(r[3]),
+                "risk_decision": json.loads(r[4]),
+                "order": json.loads(r[5]) if r[5] else None,
             }
             for r in rows
         ]

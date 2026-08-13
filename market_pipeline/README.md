@@ -61,6 +61,7 @@ resto:
 | `src/storage/db.py` | SQLite con el histórico de tesis, decisiones de riesgo y órdenes, para auditoría. |
 | `src/notify/console_notify.py` | Presenta la propuesta y pide aprobación humana por consola (reemplázalo por Telegram/Slack si quieres). |
 | `src/pipeline.py` | Orquesta todo lo anterior para una watchlist. |
+| `src/dashboard/app.py` | Dashboard interactivo (Streamlit), de solo lectura, sobre el histórico en `market_pipeline.db`. |
 
 ## Setup
 
@@ -97,6 +98,28 @@ Modo no interactivo (solo analiza y loguea, nunca manda órdenes):
 ```bash
 python -m src.pipeline --watchlist AAPL MSFT --dry-run
 ```
+
+## Dashboard interactivo
+
+```bash
+streamlit run src/dashboard/app.py
+```
+
+Es de **solo lectura**: no envía órdenes ni modifica nada, solo lee
+`market_pipeline.db` y, si hay credenciales de Alpaca en `.env`, el estado
+actual de la cuenta paper. Incluye:
+
+- KPIs: cantidad de decisiones, tasa de aprobación del risk gate, confianza
+  promedio de las tesis.
+- Cuenta en vivo (equity, cash, exposición total) y posiciones abiertas, si
+  Alpaca está configurado.
+- Curva de equity a partir de los snapshots que el pipeline registra en
+  cada corrida.
+- Confianza promedio de las tesis por símbolo.
+- Tabla filtrable (por símbolo, acción, solo aprobadas) del historial
+  completo, con el razonamiento de Claude, los riesgos que identificó y la
+  razón exacta del risk gate para cada decisión — la misma auditoría que
+  necesitas antes de confiar más capital al pipeline.
 
 ## Próximos pasos razonables
 
