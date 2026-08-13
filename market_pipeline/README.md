@@ -62,6 +62,8 @@ resto:
 | `src/notify/console_notify.py` | Presenta la propuesta y pide aprobación humana por consola (reemplázalo por Telegram/Slack si quieres). |
 | `src/pipeline.py` | Orquesta todo lo anterior para una watchlist. |
 | `src/dashboard/app.py` | Dashboard interactivo (Streamlit), de solo lectura, sobre el histórico en `market_pipeline.db`. |
+| `src/backtest/engine.py` | Corre `ClaudeAnalyst` sobre ventanas históricas y mide el resultado real de cada tesis (sin lookahead bias). |
+| `src/backtest/report.py` | Agrega los resultados del backtest en tasa de acierto, retorno promedio y desglose por confianza. |
 
 ## Setup
 
@@ -121,10 +123,34 @@ actual de la cuenta paper. Incluye:
   razón exacta del risk gate para cada decisión — la misma auditoría que
   necesitas antes de confiar más capital al pipeline.
 
+## Backtesting
+
+```bash
+python scripts/run_backtest.py --symbol AAPL --start 2026-01-01 --end 2026-06-01
+```
+
+Corre `ClaudeAnalyst` sobre ventanas históricas de precios (una tesis cada
+`--step-days`, por defecto 7) y compara cada tesis contra lo que realmente
+pasó `--horizon-days` después (por defecto 5). Reporta tasa de acierto,
+retorno promedio, y retorno promedio por bucket de confianza — la señal que
+necesitás antes de confiar el pipeline a dinero real.
+
+**Antes de correrlo, ten en cuenta:**
+- Cada fecha evaluada dispara una **llamada real a la API de Claude** (el
+  script te muestra cuántas va a hacer y pide confirmación). Un rango largo
+  con `--step-days` chico puede salir caro.
+- Claude solo ve velas hasta la fecha simulada — nunca datos posteriores —
+  para evitar *lookahead bias*.
+- Es una simplificación: no modela slippage, comisiones, ni la certeza de
+  que una orden se hubiera llenado exactamente al precio de cierre o al
+  stop-loss/take-profit propuesto. Es una primera señal, no un veredicto
+  final.
+
+Guarda el detalle en CSV con `--csv resultados.csv` si querés analizarlo en
+una spreadsheet o graficarlo aparte.
+
 ## Próximos pasos razonables
 
-- Backtesting: correr `claude_analyst.py` contra datos históricos y comparar
-  la tesis contra el resultado real antes de confiar en el pipeline en vivo.
 - Añadir más fuentes (noticias, sentimiento, fundamentales) a
   `market_context` en `pipeline.py`.
 - Sustituir Alpaca por Interactive Brokers (`ib_insync`) si necesitas
