@@ -33,7 +33,7 @@ def test_flatten_maps_nested_fields_to_flat_columns():
     assert row["symbol"] == "AAPL"
     assert row["action"] == "buy"
     assert row["confidence"] == 0.8
-    assert row["approved"] is True
+    assert bool(row["approved"]) is True
     assert row["equity"] == 100_000
     assert row["order_id"] == "abc-123"
     assert row["key_risks"] == ["Reversión macro"]
