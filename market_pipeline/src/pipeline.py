@@ -48,8 +48,18 @@ def run(watchlist: list[str], settings: Settings, dry_run: bool = False) -> None
             print(f"[{symbol}] {context['error']}, se omite.")
             continue
 
+        # Contexto intradía: solo afina el timing de entrada/salida dentro de
+        # una tesis swing -- no habilita day trading (ver claude_analyst.py).
+        # Si falla (mercado cerrado, sin datos, etc.) seguimos solo con el
+        # contexto diario en vez de abortar el análisis del símbolo.
+        intraday_context = None
+        if market_data:
+            intraday_context = market_data.get_intraday_context(symbol)
+            if intraday_context.get("error"):
+                intraday_context = None
+
         headlines = get_recent_headlines(symbol)
-        thesis = analyst.analyze(symbol, context, headlines)
+        thesis = analyst.analyze(symbol, context, headlines, intraday_context)
 
         if thesis.action == "hold":
             console_notify.report_hold(thesis)

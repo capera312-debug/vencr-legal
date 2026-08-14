@@ -13,7 +13,7 @@ from datetime import datetime, timedelta, timezone
 import pandas as pd
 from alpaca.data.historical import StockHistoricalDataClient
 from alpaca.data.requests import StockBarsRequest
-from alpaca.data.timeframe import TimeFrame
+from alpaca.data.timeframe import TimeFrame, TimeFrameUnit
 
 
 def _rsi(closes: pd.Series, period: int = 14) -> float:
@@ -57,6 +57,47 @@ def summarize_bars(symbol: str, bars: pd.DataFrame) -> dict:
     }
 
 
+def summarize_intraday_bars(symbol: str, bars: pd.DataFrame) -> dict:
+    """Resumen de corto plazo (velas de 15 minutos) para afinar el TIMING de
+    entrada o salida dentro de una tesis -- no habilita ni implica day
+    trading. Las posiciones siguen abriéndose/cerrándose vía el horizonte
+    swing normal del pipeline; esto solo mejora en qué momento de la sesión
+    conviene actuar.
+    """
+    if bars.empty:
+        return {"symbol": symbol, "error": "sin datos intradía disponibles"}
+
+    closes = bars["close"]
+    session_open = float(bars["open"].iloc[0])
+    last_price = float(closes.iloc[-1])
+    session_high = float(bars["high"].max())
+    session_low = float(bars["low"].min())
+    pct_change_session = round((last_price / session_open - 1) * 100, 2) if session_open else None
+
+    typical_price = (bars["high"] + bars["low"] + bars["close"]) / 3
+    volume_sum = float(bars["volume"].sum())
+    vwap = float((typical_price * bars["volume"]).sum() / volume_sum) if volume_sum else None
+
+    lookback = min(8, len(closes))  # ~2h en velas de 15 min
+    momentum_2h_pct = (
+        round(float(closes.iloc[-1] / closes.iloc[-lookback] - 1) * 100, 2)
+        if lookback > 1 else None
+    )
+
+    return {
+        "symbol": symbol,
+        "timeframe": "15min",
+        "last_price": round(last_price, 2),
+        "session_open": round(session_open, 2),
+        "session_high": round(session_high, 2),
+        "session_low": round(session_low, 2),
+        "pct_change_session": pct_change_session,
+        "vwap": round(vwap, 2) if vwap is not None else None,
+        "momentum_last_2h_pct": momentum_2h_pct,
+        "bars_used": len(bars),
+    }
+
+
 class MarketDataClient:
     def __init__(self, api_key: str, secret_key: str):
         self._client = StockHistoricalDataClient(api_key, secret_key)
@@ -87,3 +128,28 @@ class MarketDataClient:
         """Trae velas diarias recientes y devuelve un resumen con indicadores."""
         bars = self.get_daily_bars(symbol, start=datetime.now(timezone.utc) - timedelta(days=lookback_days))
         return summarize_bars(symbol, bars)
+
+    def get_intraday_bars(
+        self, symbol: str, lookback_hours: int = 6, timeframe_minutes: int = 15
+    ) -> pd.DataFrame:
+        """Velas intradía crudas (por defecto de 15 minutos) de las últimas
+        `lookback_hours` horas. Uso previsto: afinar el timing de entrada de
+        una tesis swing, no operar day trading -- ver `summarize_intraday_bars`.
+        """
+        request = StockBarsRequest(
+            symbol_or_symbols=symbol,
+            timeframe=TimeFrame(timeframe_minutes, TimeFrameUnit.Minute),
+            start=datetime.now(timezone.utc) - timedelta(hours=lookback_hours),
+        )
+        bars = self._client.get_stock_bars(request).df
+        if bars.empty:
+            return bars
+        if isinstance(bars.index, pd.MultiIndex):
+            bars = bars.xs(symbol, level=0)
+        return bars.sort_index()
+
+    def get_intraday_context(self, symbol: str, lookback_hours: int = 6) -> dict:
+        """Resumen de corto plazo (15 min) para pasarle a Claude junto con el
+        contexto diario -- ver `summarize_intraday_bars` para el propósito."""
+        bars = self.get_intraday_bars(symbol, lookback_hours=lookback_hours)
+        return summarize_intraday_bars(symbol, bars)

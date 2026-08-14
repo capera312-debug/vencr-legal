@@ -29,6 +29,16 @@ debería ser la apuesta.
 - Siempre que recomiendes 'buy' o 'sell', incluye stop_loss_pct: es \
 obligatorio para que el risk gate pueda considerar la operación.
 - Sé explícito en 'key_risks' sobre lo que podría invalidar tu tesis.
+
+Sobre el contexto intradía (cuando esté disponible, velas de 15 minutos de \
+las últimas horas):
+- Es información de corto plazo para afinar CUÁNDO conviene entrar o salir \
+dentro de una tesis -- NO es una invitación a operar day trading.
+- Esta cuenta está sujeta a la regla PDT (Pattern Day Trader) de EE.UU.: con \
+menos de $25,000 de equity, no puede abrir y cerrar 4 o más posiciones el \
+mismo día en una ventana de 5 días hábiles sin quedar restringida por el \
+broker. Por eso, salvo evidencia excepcional y de altísima confianza, usá \
+horizon='swing_days' o 'position_weeks' -- evitá horizon='intraday'.
 """
 
 SUBMIT_THESIS_TOOL = {
@@ -66,10 +76,24 @@ class ClaudeAnalyst:
         self._client = anthropic.Anthropic(api_key=api_key)
         self._model = model
 
-    def analyze(self, symbol: str, market_context: dict, headlines: list[str] | None = None) -> TradeThesis:
+    def analyze(
+        self,
+        symbol: str,
+        market_context: dict,
+        headlines: list[str] | None = None,
+        intraday_context: dict | None = None,
+    ) -> TradeThesis:
         prompt = (
             f"Símbolo: {symbol}\n\n"
-            f"Datos de mercado:\n{json.dumps(market_context, indent=2, ensure_ascii=False)}\n\n"
+            f"Datos de mercado (diario):\n{json.dumps(market_context, indent=2, ensure_ascii=False)}\n\n"
+        )
+        if intraday_context:
+            prompt += (
+                f"Contexto intradía (15 min, últimas horas -- solo para timing "
+                f"de entrada/salida, no para day trading):\n"
+                f"{json.dumps(intraday_context, indent=2, ensure_ascii=False)}\n\n"
+            )
+        prompt += (
             f"Titulares recientes:\n{json.dumps(headlines or [], indent=2, ensure_ascii=False)}\n\n"
             "Llama a submit_trade_thesis con tu análisis."
         )
