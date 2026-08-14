@@ -71,6 +71,19 @@ SUBMIT_THESIS_TOOL = {
 }
 
 
+def _normalize_thesis_input(raw_input: dict) -> dict:
+    """Tolera desvíos menores del schema que `TradeThesis` no perdonaría tal
+    cual -- ej. `key_risks` como un string suelto en vez de una lista de un
+    solo elemento. El tool_choice forzado hace esto poco común, pero no
+    imposible, y no vale la pena perder toda la tesis por eso.
+    """
+    normalized = dict(raw_input)
+    key_risks = normalized.get("key_risks")
+    if isinstance(key_risks, str):
+        normalized["key_risks"] = [key_risks] if key_risks.strip() else []
+    return normalized
+
+
 class ClaudeAnalyst:
     def __init__(self, api_key: str, model: str = "claude-sonnet-5"):
         self._client = anthropic.Anthropic(api_key=api_key)
@@ -109,6 +122,6 @@ class ClaudeAnalyst:
 
         for block in response.content:
             if block.type == "tool_use" and block.name == "submit_trade_thesis":
-                return TradeThesis(**block.input)
+                return TradeThesis(**_normalize_thesis_input(block.input))
 
         raise RuntimeError(f"Claude no devolvió una tesis estructurada para {symbol}")

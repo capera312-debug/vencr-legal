@@ -42,62 +42,77 @@ def run(watchlist: list[str], settings: Settings, dry_run: bool = False) -> None
 
     for symbol in watchlist:
         print(f"\n--- Analizando {symbol} ---")
+        try:
+            _process_symbol(symbol, settings, dry_run, market_data, analyst, risk_gate, audit, broker)
+        except Exception as exc:  # noqa: BLE001 -- un símbolo roto no debe tumbar el resto de la watchlist
+            print(f"[{symbol}] Error inesperado, se omite: {exc!r}")
 
-        context = market_data.get_context(symbol) if market_data else {"symbol": symbol}
-        if context.get("error"):
-            print(f"[{symbol}] {context['error']}, se omite.")
-            continue
 
-        # Contexto intradía: solo afina el timing de entrada/salida dentro de
-        # una tesis swing -- no habilita day trading (ver claude_analyst.py).
-        # Si falla (mercado cerrado, sin datos, etc.) seguimos solo con el
-        # contexto diario en vez de abortar el análisis del símbolo.
-        intraday_context = None
-        if market_data:
-            intraday_context = market_data.get_intraday_context(symbol)
-            if intraday_context.get("error"):
-                intraday_context = None
+def _process_symbol(
+    symbol: str,
+    settings: Settings,
+    dry_run: bool,
+    market_data: MarketDataClient | None,
+    analyst: ClaudeAnalyst,
+    risk_gate: RiskGate,
+    audit: AuditLog,
+    broker: AlpacaBroker | None,
+) -> None:
+    context = market_data.get_context(symbol) if market_data else {"symbol": symbol}
+    if context.get("error"):
+        print(f"[{symbol}] {context['error']}, se omite.")
+        return
 
-        headlines = get_recent_headlines(symbol)
-        thesis = analyst.analyze(symbol, context, headlines, intraday_context)
+    # Contexto intradía: solo afina el timing de entrada/salida dentro de
+    # una tesis swing -- no habilita day trading (ver claude_analyst.py).
+    # Si falla (mercado cerrado, sin datos, etc.) seguimos solo con el
+    # contexto diario en vez de abortar el análisis del símbolo.
+    intraday_context = None
+    if market_data:
+        intraday_context = market_data.get_intraday_context(symbol)
+        if intraday_context.get("error"):
+            intraday_context = None
 
-        if thesis.action == "hold":
-            console_notify.report_hold(thesis)
-            continue
+    headlines = get_recent_headlines(symbol)
+    thesis = analyst.analyze(symbol, context, headlines, intraday_context)
 
-        trades_today = audit.trades_today()
-        portfolio = (
-            broker.get_portfolio_state(trades_today)
-            if broker
-            else PortfolioState(equity=0.0, cash=0.0, total_exposure_pct=0.0, trades_today=trades_today)
-        )
-        risk_decision = risk_gate.evaluate(thesis, portfolio)
+    if thesis.action == "hold":
+        console_notify.report_hold(thesis)
+        return
 
-        if not risk_decision.approved:
-            console_notify.report_rejected(thesis, risk_decision)
-            audit.record(thesis, portfolio, risk_decision)
-            continue
+    trades_today = audit.trades_today()
+    portfolio = (
+        broker.get_portfolio_state(trades_today)
+        if broker
+        else PortfolioState(equity=0.0, cash=0.0, total_exposure_pct=0.0, trades_today=trades_today)
+    )
+    risk_decision = risk_gate.evaluate(thesis, portfolio)
 
-        order = None
-        if dry_run:
-            print(f"[{symbol}] (dry-run) risk gate aprobó la orden, pero no se envía nada.")
+    if not risk_decision.approved:
+        console_notify.report_rejected(thesis, risk_decision)
+        audit.record(thesis, portfolio, risk_decision)
+        return
+
+    order = None
+    if dry_run:
+        print(f"[{symbol}] (dry-run) risk gate aprobó la orden, pero no se envía nada.")
+    else:
+        should_send = settings.auto_execute or console_notify.present_and_confirm(thesis, risk_decision)
+        if should_send:
+            notional = portfolio.equity * risk_decision.adjusted_size_pct
+            order = broker.submit_bracket_order(
+                symbol=symbol,
+                side=thesis.action,
+                notional=notional,
+                last_close=context.get("last_close", 0),
+                stop_loss_pct=thesis.stop_loss_pct,
+                take_profit_pct=thesis.take_profit_pct,
+            )
+            print(f"[{symbol}] Orden enviada: {order.broker_order_id} (paper={order.paper})")
         else:
-            should_send = settings.auto_execute or console_notify.present_and_confirm(thesis, risk_decision)
-            if should_send:
-                notional = portfolio.equity * risk_decision.adjusted_size_pct
-                order = broker.submit_bracket_order(
-                    symbol=symbol,
-                    side=thesis.action,
-                    notional=notional,
-                    last_close=context.get("last_close", 0),
-                    stop_loss_pct=thesis.stop_loss_pct,
-                    take_profit_pct=thesis.take_profit_pct,
-                )
-                print(f"[{symbol}] Orden enviada: {order.broker_order_id} (paper={order.paper})")
-            else:
-                print(f"[{symbol}] Orden descartada por confirmación manual.")
+            print(f"[{symbol}] Orden descartada por confirmación manual.")
 
-        audit.record(thesis, portfolio, risk_decision, order)
+    audit.record(thesis, portfolio, risk_decision, order)
 
 
 def main() -> None:
