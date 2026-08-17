@@ -13,6 +13,8 @@ class Settings:
     project_id: str
     base_url: str
     oauth_url: str
+    redirect_uri: str
+    auth_mode: str
     rfis_path: str
     submittals_path: str
     drawings_path: str
@@ -37,6 +39,13 @@ def load_settings() -> Settings:
         project_id=_required("PROCORE_PROJECT_ID"),
         base_url=os.environ.get("PROCORE_BASE_URL", "https://api.procore.com").rstrip("/"),
         oauth_url=os.environ.get("PROCORE_OAUTH_URL", "https://login.procore.com").rstrip("/"),
+        # "authorization_code" (default): login único como tú mismo + refresh token
+        # guardado localmente. "client_credentials": requiere una Developer Managed
+        # Service Account (DMSA) habilitada por Procore — ver README.
+        auth_mode=os.environ.get("PROCORE_AUTH_MODE", "authorization_code"),
+        # urn:ietf:wg:oauth:2.0:oob = flujo "installed app" sin servidor: Procore te
+        # muestra el código en pantalla en vez de redirigir a una URL.
+        redirect_uri=os.environ.get("PROCORE_REDIRECT_URI", "urn:ietf:wg:oauth:2.0:oob"),
         rfis_path=os.environ.get(
             "PROCORE_RFIS_PATH", "/rest/v1.0/projects/{project_id}/rfis"
         ),

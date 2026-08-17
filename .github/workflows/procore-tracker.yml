@@ -1,10 +1,17 @@
 name: Procore Tracker
 
-# IMPORTANTE: GitHub solo dispara workflows programados (schedule) desde el
-# branch por defecto del repo (normalmente "main"). Mientras este workflow
-# viva solo en un branch de feature, el cron no se activará — corre bien con
-# "workflow_dispatch" (botón "Run workflow") para probarlo, y hazlo automático
-# una vez que este archivo esté en main.
+# NO ACTIVO POR AHORA: este workflow necesita autenticarse sin intervención
+# humana, lo cual requiere el modo "client_credentials" (una Developer
+# Managed Service Account / DMSA habilitada por Procore para tu app — no es
+# self-service, hay que pedírsela a Procore). Mientras tanto, el tracker
+# corre localmente con login de usuario (ver README.md, "Automatízalo en tu
+# compu" con el Programador de Tareas de Windows).
+#
+# Cuando tengas la DMSA: agrega PROCORE_AUTH_MODE=client_credentials como
+# secret/variable, y este workflow queda listo para usarse.
+#
+# Nota aparte: GitHub solo dispara workflows programados (schedule) desde el
+# branch por defecto del repo (normalmente "main").
 on:
   schedule:
     # Todos los días de semana a las 13:00 UTC (~8am hora ET). Ajusta el cron
@@ -35,6 +42,7 @@ jobs:
           PROCORE_CLIENT_SECRET: ${{ secrets.PROCORE_CLIENT_SECRET }}
           PROCORE_COMPANY_ID: ${{ secrets.PROCORE_COMPANY_ID }}
           PROCORE_PROJECT_ID: ${{ secrets.PROCORE_PROJECT_ID }}
+          PROCORE_AUTH_MODE: client_credentials
         run: python tracker.py
 
       - name: Commitear el nuevo reporte y el estado

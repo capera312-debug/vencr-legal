@@ -23,12 +23,13 @@ from dotenv import load_dotenv
 
 from config import load_settings
 from diffing import cross_reference_alerts, diff, normalize
-from procore_client import ProcoreClient
+from procore_client import ProcoreClient, ProcoreError
 from report import write_index, write_report
 
 BASE_DIR = Path(__file__).resolve().parent
 STATE_PATH = BASE_DIR / "state" / "last_snapshot.json"
 REPORTS_DIR = BASE_DIR / "reports"
+TOKEN_CACHE_PATH = BASE_DIR / ".token_cache.json"
 
 PATH_SETTINGS_ATTR = {
     "rfis": "rfis_path",
@@ -65,24 +66,30 @@ def main() -> None:
         client_secret=settings.client_secret,
         base_url=settings.base_url,
         oauth_url=settings.oauth_url,
+        auth_mode=settings.auth_mode,
+        redirect_uri=settings.redirect_uri,
         company_id=settings.company_id,
+        token_cache_path=TOKEN_CACHE_PATH,
     )
 
     previous_snapshot = load_previous_snapshot()
     current_snapshot: dict = {"generated_at": datetime.now(timezone.utc).isoformat()}
     diffs: dict[str, dict] = {}
 
-    for kind in ("rfis", "submittals", "drawings"):
-        print(f"Trayendo {kind} de Procore...")
-        raw_items = fetch_items(client, settings, kind)
-        current_snapshot[kind] = normalize(kind, raw_items)
-        prev_items = previous_snapshot.get(kind, {})
-        diffs[kind] = diff(prev_items, current_snapshot[kind])
-        d = diffs[kind]
-        print(
-            f"  {kind}: +{len(d['added'])} nuevos, {len(d['updated'])} actualizados, "
-            f"-{len(d['removed'])} ya no aparecen"
-        )
+    try:
+        for kind in ("rfis", "submittals", "drawings"):
+            print(f"Trayendo {kind} de Procore...")
+            raw_items = fetch_items(client, settings, kind)
+            current_snapshot[kind] = normalize(kind, raw_items)
+            prev_items = previous_snapshot.get(kind, {})
+            diffs[kind] = diff(prev_items, current_snapshot[kind])
+            d = diffs[kind]
+            print(
+                f"  {kind}: +{len(d['added'])} nuevos, {len(d['updated'])} actualizados, "
+                f"-{len(d['removed'])} ya no aparecen"
+            )
+    except ProcoreError as exc:
+        raise SystemExit(f"\n❌ {exc}") from exc
 
     alerts = cross_reference_alerts(
         diffs["rfis"],
