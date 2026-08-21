@@ -73,7 +73,7 @@ def _process_symbol(
         if intraday_context.get("error"):
             intraday_context = None
 
-    headlines = get_recent_headlines(symbol)
+    headlines = get_recent_headlines(symbol, settings.alpaca_api_key, settings.alpaca_secret_key)
     thesis = analyst.analyze(symbol, context, headlines, intraday_context)
 
     if thesis.action == "hold":
